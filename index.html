@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>香港接待排班表 · Microsoft 365</title>
+
+<!-- MSAL.js v2 -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.header h1 { font-size: 19px; font-weight: 700; }
+.header p { font-size: 12px; opacity: 0.55; margin-top: 3px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.month-nav { display: flex; align-items: center; gap: 6px; }
+.nav-btn { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+.nav-btn:hover { background: rgba(255,255,255,0.22); }
+.month-label { font-size: 16px; font-weight: 700; color: white; min-width: 120px; text-align: center; }
+.summary-btn { background: #e63946; border: none; color: white; padding: 7px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.summary-btn:hover { background: #c1121f; }
+.refresh-btn { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.refresh-btn:hover { background: rgba(255,255,255,0.22); }
+.user-chip { font-size: 11px; color: rgba(255,255,255,0.7); padding: 4px 10px; background: rgba(255,255,255,0.08); border-radius: 6px; }
+.signout-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+
+.sync-bar { background: #1a1a2e; color: rgba(255,255,255,0.6); font-size: 11px; padding: 5px 28px; display: flex; align-items: center; gap: 8px; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
+.sync-dot.ok { background: #2ecc71; }
+.sync-dot.busy { background: #f39c12; animation: pulse 1s infinite; }
+.sync-dot.err { background: #e63946; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 10px 28px; background: white; border-bottom: 1px solid #e8eaed; align-items: center; }
+.legend-title { font-size: 11px; color: #888; font-weight: 700; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #444; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+.cal-wrap { padding: 16px 28px 28px; }
+.weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.wd-lbl { text-align: center; font-size: 11px; font-weight: 700; color: #999; padding: 5px; }
+.wd-lbl.we { color: #c0555f; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+
+.day-cell { background: white; border-radius: 9px; padding: 8px; min-height: 100px; cursor: pointer; border: 2px solid transparent; transition: all 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 3px; }
+.day-cell:hover { border-color: #e63946; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.day-cell.today { border-color: #e63946 !important; }
+.day-cell.we { background: #fdf6f7; }
+.day-cell.oor { opacity: 0.3; pointer-events: none; }
+.day-cell.empty { background: transparent; box-shadow: none; cursor: default; pointer-events: none; }
+.day-num { font-size: 11px; font-weight: 700; color: #bbb; }
+.day-cell.today .day-num { color: #e63946; }
+.day-cell.we .day-num { color: #d08090; }
+.mem-tag { border-radius: 5px; padding: 2px 6px; font-size: 10px; font-weight: 700; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.we-note { font-size: 9px; color: #c8828e; }
+.bk-chip { background: #fff0f0; border: 1px solid #ffd0d0; border-radius: 5px; padding: 2px 5px; font-size: 10px; color: #c0392b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.bk-chip-time { font-weight: 700; margin-right: 3px; }
+.more-chip { font-size: 10px; color: #aaa; padding: 1px 4px; }
+
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.overlay.open { display: flex; }
+.modal { background: white; border-radius: 16px; width: 540px; max-width: 96vw; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.m-head { padding: 18px 22px 14px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; z-index: 1; border-radius: 16px 16px 0 0; }
+.m-title { font-size: 15px; font-weight: 700; }
+.m-sub { font-size: 12px; color: #999; margin-top: 2px; }
+.x-btn { width: 28px; height: 28px; border-radius: 50%; border: none; background: #f0f0f0; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.x-btn:hover { background: #e0e0e0; }
+.m-body { padding: 18px 22px; }
+
+.sec-lbl { font-size: 10px; font-weight: 700; color: #bbb; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; margin-top: 18px; }
+.sec-lbl:first-child { margin-top: 0; }
+.duty-box { display: flex; align-items: center; gap: 10px; padding: 11px; background: #f8f9fa; border-radius: 9px; }
+.duty-av { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 14px; flex-shrink: 0; }
+.duty-name { font-weight: 600; font-size: 14px; }
+.duty-sub { font-size: 11px; color: #999; }
+.ghost-btn { width: 100%; padding: 7px; background: white; color: #777; border: 1px solid #e0e0e0; border-radius: 7px; font-size: 12px; cursor: pointer; margin-top: 6px; transition: all 0.2s; }
+.ghost-btn:hover { border-color: #aaa; color: #333; }
+.mem-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.mem-pick { padding: 6px 4px; border-radius: 7px; border: 2px solid transparent; cursor: pointer; font-size: 11px; font-weight: 600; color: white; opacity: 0.72; transition: all 0.15s; }
+.mem-pick:hover, .mem-pick.sel { opacity: 1; border-color: rgba(0,0,0,0.3); transform: scale(1.04); }
+
+.bk-item { background: #fff9f9; border: 1px solid #fde0e0; border-radius: 9px; padding: 11px; margin-bottom: 7px; }
+.bk-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.bk-name { font-weight: 600; font-size: 13px; }
+.bk-time-tag { font-size: 11px; color: #e63946; font-weight: 700; background: #ffe0e0; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+.bk-meta { font-size: 11px; color: #777; margin-bottom: 4px; }
+.bk-notes-box { font-size: 12px; color: #333; background: #f5f5f5; border-radius: 6px; padding: 7px 9px; white-space: pre-wrap; line-height: 1.5; }
+.bk-notes-edit { width: 100%; font-size: 12px; color: #333; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 7px 9px; font-family: inherit; resize: vertical; min-height: 60px; outline: none; line-height: 1.5; margin-top: 2px; }
+.bk-notes-edit:focus { border-color: #e63946; background: white; }
+.save-notes-btn { margin-top: 5px; padding: 4px 10px; background: #e63946; color: white; border: none; border-radius: 5px; font-size: 11px; cursor: pointer; font-weight: 600; }
+.del-btn { background: none; border: none; color: #ddd; cursor: pointer; font-size: 12px; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; margin-left: 6px; }
+.del-btn:hover { color: #e63946; background: #ffe0e0; }
+.empty-bk { text-align: center; padding: 16px; color: #ccc; font-size: 12px; }
+
+.add-form { background: #f8f9fa; border-radius: 9px; padding: 14px; margin-top: 8px; }
+.add-title { font-size: 12px; font-weight: 700; color: #555; margin-bottom: 11px; }
+.f-row { margin-bottom: 9px; }
+.f-lbl { font-size: 11px; font-weight: 600; color: #666; margin-bottom: 3px; display: block; }
+.f-in { width: 100%; padding: 7px 9px; border: 1px solid #ddd; border-radius: 7px; font-size: 12px; outline: none; transition: border 0.2s; font-family: inherit; background: white; }
+.f-in:focus { border-color: #e63946; }
+textarea.f-in { resize: vertical; min-height: 60px; }
+.f-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.save-btn { width: 100%; padding: 9px; background: #e63946; color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 2px; }
+.save-btn:hover { background: #c1121f; }
+
+.summary-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 300; backdrop-filter: blur(4px); }
+.summary-overlay.open { display: flex; align-items: flex-start; justify-content: flex-end; }
+.summary-panel { background: white; width: 520px; max-width: 100vw; height: 100vh; overflow-y: auto; box-shadow: -8px 0 40px rgba(0,0,0,0.2); }
+.sum-head { padding: 20px 22px 16px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; z-index: 1; }
+.sum-title { font-size: 16px; font-weight: 700; }
+.sum-sub { font-size: 12px; color: #999; margin-top: 2px; }
+.sum-body { padding: 18px 22px; }
+.sum-empty { text-align: center; padding: 60px 20px; color: #ccc; font-size: 14px; }
+.sum-day { margin-bottom: 20px; }
+.sum-day-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.sum-day-date { font-size: 13px; font-weight: 700; color: #333; }
+.sum-day-mem { font-size: 11px; font-weight: 600; color: white; padding: 2px 8px; border-radius: 4px; }
+.sum-bk { background: #fff9f9; border: 1px solid #fde0e0; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.sum-bk-top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.sum-bk-name { font-weight: 600; font-size: 13px; }
+.sum-bk-time { font-size: 11px; color: #e63946; font-weight: 700; background: #ffe0e0; padding: 1px 6px; border-radius: 4px; }
+.sum-bk-meta { font-size: 11px; color: #888; margin-bottom: 3px; }
+.sum-bk-notes { font-size: 11px; color: #444; background: #f5f5f5; border-radius: 5px; padding: 5px 8px; white-space: pre-wrap; line-height: 1.5; }
+
+.loading-screen { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; gap: 14px; padding: 20px; }
+.loading-spinner { width: 36px; height: 36px; border: 3px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #888; }
+.loading-card { background: white; border-radius: 14px; padding: 28px 32px; max-width: 460px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.08); text-align: center; }
+.loading-card h2 { font-size: 17px; margin-bottom: 8px; color: #1a1a2e; }
+.loading-card p { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.6; }
+.ms-signin-btn { background: #2f2f2f; color: white; border: none; padding: 11px 20px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.ms-signin-btn:hover { background: #1a1a1a; }
+.ms-logo { width: 18px; height: 18px; }
+.init-btn { background: #e63946; color: white; border: none; padding: 9px 18px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+.err-box { background: #fff0f0; border: 1px solid #ffcccc; color: #c0392b; padding: 10px 14px; border-radius: 8px; font-size: 12px; margin-top: 12px; text-align: left; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 启动/登录屏幕 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-card">
+    <div class="loading-spinner" id="bootSpinner" style="margin: 0 auto 14px"></div>
+    <h2 id="bootTitle">正在连接 Microsoft 365…</h2>
+    <p id="bootMsg">如未自动跳转，请点击下方按钮登录。</p>
+    <div id="bootActions"></div>
+    <div id="bootErr" class="err-box" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 主界面 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="header" id="mainHeader" style="display:none">
+  <div>
+    <h1>🏙️ 香港接待排班表</h1>
+    <p>2026年 5月25日 – 7月31日 · 数据存储于 SharePoint Excel</p>
+  </div>
+  <div class="header-right">
+    <span class="user-chip" id="userChip"></span>
+    <button class="refresh-btn" onclick="manualRefresh()" title="重新从 Excel 拉取数据">🔄 刷新</button>
+    <button class="summary-btn" onclick="openSummary()">📋 预约汇总</button>
+    <div class="month-nav">
+      <button class="nav-btn" onclick="prevM()">‹</button>
+      <div class="month-label" id="mLabel"></div>
+      <button class="nav-btn" onclick="nextM()">›</button>
+    </div>
+    <button class="signout-btn" onclick="signOut()">退出</button>
+  </div>
+</div>
+
+<div class="sync-bar" id="syncBar" style="display:none">
+  <div class="sync-dot" id="syncDot"></div>
+  <span id="syncText">正在连接...</span>
+</div>
+
+<div class="legend" id="legendBar" style="display:none">
+  <span class="legend-title">成员</span>
+  <div id="lgd" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+</div>
+
+<div class="cal-wrap" id="calWrap" style="display:none">
+  <div class="weekdays">
+    <div class="wd-lbl">周一</div><div class="wd-lbl">周二</div><div class="wd-lbl">周三</div>
+    <div class="wd-lbl">周四</div><div class="wd-lbl">周五</div>
+    <div class="wd-lbl we">周六</div><div class="wd-lbl we">周日</div>
+  </div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<div class="overlay" id="ov" onclick="closeOv(event)">
+  <div class="modal">
+    <div class="m-head">
+      <div><div class="m-title" id="mT"></div><div class="m-sub">香港接待值班详情</div></div>
+      <button class="x-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="m-body" id="mB"></div>
+  </div>
+</div>
+
+<div class="summary-overlay" id="sumOv" onclick="closeSumOv(event)">
+  <div class="summary-panel">
+    <div class="sum-head">
+      <div><div class="sum-title">📋 所有预约汇总</div><div class="sum-sub" id="sumSub"></div></div>
+      <button class="x-btn" onclick="closeSummary()">✕</button>
+    </div>
+    <div class="sum-body" id="sumBody"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// 配置区 —— 部署前请填写下列 4 项 (其它无需修改)
+// ════════════════════════════════════════════════════════════════════════════
+const CONFIG = {
+  // ① Azure AD 应用 (Application) Client ID —— 在 Azure Portal > 应用注册 里复制
+  clientId: '94e77881-1408-4985-836b-7ef89c06b3db',
+
+  // ② 租户：填你公司租户的 GUID 或域名 (如 contoso.onmicrosoft.com)；
+  //    若希望任意 Microsoft 账户都能登录可填 'common'
+  tenantId: '1b21f0e0-a516-4b8a-971e-8f7a4680548c',
+
+  // ③ Excel 文件的分享链接 (OneDrive 或 SharePoint 都支持)
+  //    在 OneDrive 网页里右键文件 → Share → "可编辑" → Copy link
+  //    把整条 URL (含 ?e=xxxx 部分) 粘贴到这里
+  fileShareUrl: 'https://weehur-my.sharepoint.com/:x:/g/personal/sitarazhang_weehur_com_sg/IQBiOXFtdU1cRIxn7qDdKSIvAUY0SIloUMOm8IOpWAG2ltg?e=HAYOaw',
+
+  // 表名 (除非冲突否则保持默认)
+  bookingsTable: 'Bookings',
+  overridesTable: 'Overrides',
+  overridesSheet: 'Overrides',
+};
+
+// 团队成员定义 (与原版一致)
+const MEMBERS = [
+  {name:'Sitara',   color:'#e63946', start:'2026-05-25', end:'2026-05-29'},
+  {name:'Xihao',    color:'#457b9d', start:'2026-05-30', end:'2026-06-05'},
+  {name:'Fonia',    color:'#2a9d8f', start:'2026-06-05', end:'2026-06-12'},
+  {name:'Benneth',  color:'#e9a824', start:'2026-06-12', end:'2026-06-19'},
+  {name:'Miaomiao', color:'#f4742a', start:'2026-06-19', end:'2026-06-26'},
+  {name:'Cassie',   color:'#9b5de5', start:'2026-06-26', end:'2026-07-03'},
+  {name:'Eric',     color:'#0aab82', start:'2026-07-03', end:'2026-07-10'},
+  {name:'Louise',   color:'#ef476f', start:'2026-07-10', end:'2026-07-17'},
+  {name:'Eunice',   color:'#118ab2', start:'2026-07-17', end:'2026-07-24'},
+  {name:'Sitara',   color:'#e63946', start:'2026-07-24', end:'2026-07-31'},
+];
+
+const SCOPES = ['User.Read', 'Sites.ReadWrite.All', 'Files.ReadWrite.All'];
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const BOOK_COLS = ['ID', '日期', '客户姓名', '时间', '联系方式', '来源需求', '跟进备注', '创建时间'];
+const OVR_COLS  = ['日期', '负责人'];
+
+// ════════════════════════════════════════════════════════════════════════════
+// MSAL 初始化
+// ════════════════════════════════════════════════════════════════════════════
+const msalConfig = {
+  auth: {
+    clientId: CONFIG.clientId,
+    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
+};
+
+let msalApp = null;
+let account = null;
+let driveId = null;
+let itemId = null;
+let bookRowsCache = []; // [{rowIndex, id, date, name, time, contact, source, notes, ts}]
+let ovrRowsCache = [];  // [{rowIndex, date, name}]
+
+// 业务状态 (沿用原版语义)
+let OV = {}, BK = {};
+let cY = 2026, cM = 4, selD = null, editDuty = false;
+
+function ld(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+const RANGE_S = ld('2026-05-25'), RANGE_E = ld('2026-07-31');
+const DNAMES  = ['周日','周一','周二','周三','周四','周五','周六'];
+const MNAMES  = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+
+// ════════════════════════════════════════════════════════════════════════════
+// 启动屏 UI
+// ════════════════════════════════════════════════════════════════════════════
+function setBoot(title, msg, opts) {
+  document.getElementById('bootTitle').textContent = title;
+  document.getElementById('bootMsg').innerHTML = msg;
+  const sp = document.getElementById('bootSpinner');
+  const actions = document.getElementById('bootActions');
+  const errBox = document.getElementById('bootErr');
+  sp.style.display = (opts && opts.spinner === false) ? 'none' : 'block';
+  actions.innerHTML = (opts && opts.actions) || '';
+  if (opts && opts.err) { errBox.style.display = 'block'; errBox.textContent = opts.err; }
+  else errBox.style.display = 'none';
+}
+
+function bootErr(title, err) {
+  setBoot(title, '请检查 CONFIG 配置或网络后重试。', {
+    spinner: false,
+    actions: '<button class="ms-signin-btn" onclick="location.reload()">重新加载</button>',
+    err: (err && err.message) || JSON.stringify(err),
+  });
+}
+
+function showApp() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('mainHeader').style.display = 'flex';
+  document.getElementById('syncBar').style.display = 'flex';
+  document.getElementById('legendBar').style.display = 'flex';
+  document.getElementById('calWrap').style.display = 'block';
+}
+
+function setSyncUI(status, msg) {
+  const dot = document.getElementById('syncDot');
+  const txt = document.getElementById('syncText');
+  dot.className = 'sync-dot ' + (status === 'ok' ? 'ok' : status === 'busy' ? 'busy' : status === 'err' ? 'err' : '');
+  txt.textContent = msg;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 登录流程
+// ════════════════════════════════════════════════════════════════════════════
+async function initAuth() {
+  if (CONFIG.clientId.startsWith('__') || CONFIG.tenantId.startsWith('__') || CONFIG.fileShareUrl.startsWith('__')) {
+    bootErr('CONFIG 未填写完整', new Error('请先按部署指南填写 CONFIG.clientId / tenantId / fileShareUrl。'));
+    return;
+  }
+  msalApp = new msal.PublicClientApplication(msalConfig);
+  await msalApp.initialize();
+
+  // 处理 redirect 回调
+  try {
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp && resp.account) account = resp.account;
+  } catch (e) { bootErr('登录回调失败', e); return; }
+
+  // 检查是否已有缓存的账户
+  if (!account) {
+    const accs = msalApp.getAllAccounts();
+    if (accs.length > 0) account = accs[0];
+  }
+
+  if (!account) {
+    setBoot('需要登录 Microsoft 365', '使用你的公司账号登录以访问 SharePoint Excel 数据。', {
+      spinner: false,
+      actions: '<button class="ms-signin-btn" onclick="signIn()"><svg class="ms-logo" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>使用 Microsoft 账户登录</button>',
+    });
+    return;
+  }
+
+  document.getElementById('userChip').textContent = '👤 ' + (account.username || account.name);
+  await bootstrap();
+}
+
+async function signIn() {
+  try { await msalApp.loginRedirect({ scopes: SCOPES }); }
+  catch (e) { bootErr('登录失败', e); }
+}
+
+function signOut() {
+  if (msalApp && account) {
+    msalApp.logoutRedirect({ account, postLogoutRedirectUri: msalConfig.auth.redirectUri });
+  }
+}
+
+async function getToken() {
+  if (!msalApp || !account) throw new Error('未登录');
+  try {
+    const r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account });
+    return r.accessToken;
+  } catch (e) {
+    if (e instanceof msal.InteractionRequiredAuthError) {
+      await msalApp.acquireTokenRedirect({ scopes: SCOPES });
+    }
+    throw e;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Graph API 封装
+// ════════════════════════════════════════════════════════════════════════════
+async function gfetch(path, opts) {
+  const token = await getToken();
+  const url = path.startsWith('http') ? path : GRAPH + path;
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      ...(opts && opts.headers),
+    },
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = JSON.stringify(await res.json()); } catch {}
+    throw new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// 把分享链接编码成 Graph API 的 shareId
+function encodeShareUrl(url) {
+  const b64 = btoa(unescape(encodeURIComponent(url)));
+  return 'u!' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// 解析 drive + item ID (通过分享链接)
+async function resolveLocation() {
+  const shareId = encodeShareUrl(CONFIG.fileShareUrl);
+  const item = await gfetch(`/shares/${shareId}/driveItem`);
+  driveId = item.parentReference && item.parentReference.driveId;
+  itemId = item.id;
+  if (!driveId || !itemId) throw new Error('无法从分享链接解析出 driveId/itemId');
+}
+
+// 文件 / 工作簿基础 URL
+function wbBase() { return `/drives/${driveId}/items/${itemId}/workbook`; }
+
+// 检查表是否存在
+async function tableExists(tableName) {
+  try { await gfetch(`${wbBase()}/tables/${encodeURIComponent(tableName)}`); return true; }
+  catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
+}
+
+async function worksheetExists(name) {
+  try { await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(name)}`); return true; }
+  catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
+}
+
+// 首次初始化：在空 xlsx 中创建两张表
+async function initWorkbook() {
+  setSyncUI('busy', '正在初始化 Excel 表结构…');
+
+  // Bookings 表 (用默认 Sheet1)
+  if (!(await tableExists(CONFIG.bookingsTable))) {
+    const sheets = await gfetch(`${wbBase()}/worksheets`);
+    const firstSheet = sheets.value[0].name;
+    // 写入表头
+    const range = `A1:${String.fromCharCode(64 + BOOK_COLS.length)}1`;
+    await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/range(address='${range}')`, {
+      method: 'PATCH', body: JSON.stringify({ values: [BOOK_COLS] }),
+    });
+    // 建表
+    const t = await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/tables/add`, {
+      method: 'POST', body: JSON.stringify({ address: `${firstSheet}!${range}`, hasHeaders: true }),
+    });
+    // 重命名
+    await gfetch(`${wbBase()}/tables/${t.id}`, {
+      method: 'PATCH', body: JSON.stringify({ name: CONFIG.bookingsTable }),
+    });
+  }
+
+  // Overrides 表 (独立 sheet)
+  if (!(await tableExists(CONFIG.overridesTable))) {
+    if (!(await worksheetExists(CONFIG.overridesSheet))) {
+      await gfetch(`${wbBase()}/worksheets/add`, {
+        method: 'POST', body: JSON.stringify({ name: CONFIG.overridesSheet }),
+      });
+    }
+    const range = `A1:${String.fromCharCode(64 + OVR_COLS.length)}1`;
+    await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(CONFIG.overridesSheet)}/range(address='${range}')`, {
+      method: 'PATCH', body: JSON.stringify({ values: [OVR_COLS] }),
+    });
+    const t = await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(CONFIG.overridesSheet)}/tables/add`, {
+      method: 'POST', body: JSON.stringify({ address: `${CONFIG.overridesSheet}!${range}`, hasHeaders: true }),
+    });
+    await gfetch(`${wbBase()}/tables/${t.id}`, {
+      method: 'PATCH', body: JSON.stringify({ name: CONFIG.overridesTable }),
+    });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 数据加载 / 写入
+// ════════════════════════════════════════════════════════════════════════════
+async function fetchTableRows(tableName) {
+  // 一次性拉全部行；Graph 默认分页可能截断，使用 $top + nextLink
+  let rows = [];
+  let url = `${wbBase()}/tables/${encodeURIComponent(tableName)}/rows?$top=2000`;
+  while (url) {
+    const resp = await gfetch(url);
+    rows = rows.concat(resp.value || []);
+    url = resp['@odata.nextLink'] || null;
+  }
+  return rows;
+}
+
+async function loadAll() {
+  setSyncUI('busy', '正在从 Excel 拉取数据…');
+  const [bk, ov] = await Promise.all([
+    fetchTableRows(CONFIG.bookingsTable),
+    fetchTableRows(CONFIG.overridesTable),
+  ]);
+
+  bookRowsCache = bk.map(r => ({
+    rowIndex: r.index,
+    id:      r.values[0][0],
+    date:    r.values[0][1],
+    name:    r.values[0][2],
+    time:    r.values[0][3],
+    contact: r.values[0][4],
+    source:  r.values[0][5],
+    notes:   r.values[0][6],
+    ts:      r.values[0][7],
+  }));
+  ovrRowsCache = ov.map(r => ({
+    rowIndex: r.index,
+    date: r.values[0][0],
+    name: r.values[0][1],
+  }));
+
+  // 转换为业务结构
+  BK = {};
+  for (const r of bookRowsCache) {
+    if (!r.date) continue;
+    if (!BK[r.date]) BK[r.date] = [];
+    BK[r.date].push({ _id: r.id, name: r.name, time: r.time, contact: r.contact, source: r.source, notes: r.notes, ts: r.ts });
+  }
+  OV = {};
+  for (const r of ovrRowsCache) { if (r.date) OV[r.date] = r.name; }
+
+  const now = new Date();
+  setSyncUI('ok', `已同步 · ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`);
+}
+
+async function addBookingRow(b) {
+  setSyncUI('busy', '正在保存预约…');
+  const row = [[b._id, b.date, b.name, b.time, b.contact, b.source, b.notes, b.ts]];
+  const resp = await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/add`, {
+    method: 'POST', body: JSON.stringify({ values: row }),
+  });
+  bookRowsCache.push({ rowIndex: resp.index, ...b });
+  setSyncUI('ok', '已保存');
+}
+
+async function deleteBookingRow(bookingId) {
+  setSyncUI('busy', '正在删除…');
+  // 先刷新 rowIndex（其它人删除会让索引漂移）
+  const rows = await fetchTableRows(CONFIG.bookingsTable);
+  const target = rows.find(r => r.values[0][0] === bookingId);
+  if (!target) throw new Error('未找到对应行，请刷新');
+  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, {
+    method: 'DELETE',
+  });
+  setSyncUI('ok', '已删除');
+}
+
+async function updateBookingNotes(bookingId, newNotes) {
+  setSyncUI('busy', '正在保存…');
+  const rows = await fetchTableRows(CONFIG.bookingsTable);
+  const target = rows.find(r => r.values[0][0] === bookingId);
+  if (!target) throw new Error('未找到对应行，请刷新');
+  // 列 G (index 6) = 跟进备注
+  const newValues = [...target.values[0]]; newValues[6] = newNotes;
+  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, {
+    method: 'PATCH', body: JSON.stringify({ values: [newValues] }),
+  });
+  setSyncUI('ok', '已保存');
+}
+
+async function setOverride(dateStr, memberName) {
+  setSyncUI('busy', '正在保存负责人…');
+  const rows = await fetchTableRows(CONFIG.overridesTable);
+  const existing = rows.find(r => r.values[0][0] === dateStr);
+  if (existing) {
+    await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.overridesTable)}/rows/itemAt(index=${existing.index})`, {
+      method: 'PATCH', body: JSON.stringify({ values: [[dateStr, memberName]] }),
+    });
+  } else {
+    await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.overridesTable)}/rows/add`, {
+      method: 'POST', body: JSON.stringify({ values: [[dateStr, memberName]] }),
+    });
+  }
+  setSyncUI('ok', '已保存');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 启动序列
+// ════════════════════════════════════════════════════════════════════════════
+async function bootstrap() {
+  try {
+    setBoot('正在解析文件位置…', '通过分享链接查找 Excel…');
+    await resolveLocation();
+  } catch (e) {
+    bootErr('无法访问 Excel 文件', e);
+    return;
+  }
+
+  // 检查表结构
+  try {
+    setBoot('检查 Excel 表结构…', '');
+    const [hasB, hasO] = await Promise.all([
+      tableExists(CONFIG.bookingsTable),
+      tableExists(CONFIG.overridesTable),
+    ]);
+    if (!hasB || !hasO) {
+      setBoot('Excel 尚未初始化', `检测到文件已存在但缺少表结构。点击下方按钮，自动创建 <b>${CONFIG.bookingsTable}</b> 和 <b>${CONFIG.overridesTable}</b> 两张表。<br><br>(只需执行一次)`, {
+        spinner: false,
+        actions: '<button class="init-btn" onclick="runInit()">⚙️ 初始化表结构</button>',
+      });
+      return;
+    }
+  } catch (e) { bootErr('检查表结构失败', e); return; }
+
+  // 拉数据
+  try {
+    setBoot('正在加载排班数据…', '');
+    await loadAll();
+  } catch (e) { bootErr('加载数据失败', e); return; }
+
+  showApp();
+  renderLegend();
+  buildCal();
+}
+
+async function runInit() {
+  try {
+    setBoot('正在初始化…', '正在创建 Bookings 和 Overrides 表…');
+    await initWorkbook();
+    await bootstrap();
+  } catch (e) { bootErr('初始化失败', e); }
+}
+
+async function manualRefresh() {
+  try { await loadAll(); buildCal(); if (selD) renderM(); }
+  catch (e) { setSyncUI('err', '刷新失败: ' + e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 渲染：图例 + 日历 (与原版语义相同)
+// ════════════════════════════════════════════════════════════════════════════
+function renderLegend() {
+  const seen = new Set();
+  document.getElementById('lgd').innerHTML = MEMBERS
+    .filter(m => { if (seen.has(m.name)) return false; seen.add(m.name); return true; })
+    .map(m => `<div class="legend-item"><div class="legend-dot" style="background:${m.color}"></div>${m.name}</div>`)
+    .join('');
+}
+
+function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+function getMem(ds){
+  if (OV[ds]) { const c=[...MEMBERS].reverse().find(x=>x.name===OV[ds]); return {name:OV[ds], color:c?c.color:'#888'}; }
+  const dt=ld(ds);
+  if (dt.getDay()===0 || dt.getDay()===6) return null;
+  for (const m of MEMBERS) { if (dt>=ld(m.start) && dt<=ld(m.end)) return {name:m.name, color:m.color}; }
+  return null;
+}
+
+function buildCal(){
+  document.getElementById('mLabel').textContent = `${cY}年 ${MNAMES[cM]}`;
+  const g = document.getElementById('calGrid');
+  g.innerHTML = '';
+  const offset = (new Date(cY,cM,1).getDay()+6)%7;
+  const dim = new Date(cY,cM+1,0).getDate();
+  const today = new Date();
+
+  for (let i=0; i<offset; i++) { const e=document.createElement('div'); e.className='day-cell empty'; g.appendChild(e); }
+
+  for (let d=1; d<=dim; d++) {
+    const dt=new Date(cY,cM,d);
+    const dow=dt.getDay();
+    const isWE = dow===0 || dow===6;
+    const key = dkey(cY,cM,d);
+    const mem = getMem(key);
+    const bks = BK[key] || [];
+    const inR = dt>=RANGE_S && dt<=RANGE_E;
+    const isT = dt.toDateString() === today.toDateString();
+
+    const el = document.createElement('div');
+    el.className = ['day-cell', isWE?'we':'', isT?'today':'', !inR?'oor':''].filter(Boolean).join(' ');
+
+    let h = `<div class="day-num">${cM+1}/${d}</div>`;
+    if (inR) {
+      if (isWE) h += `<div class="we-note">自行调整</div>`;
+      if (mem && !isWE) h += `<div class="mem-tag" style="background:${mem.color}">${mem.name}</div>`;
+    } else {
+      h += `<div style="font-size:10px;color:#ccc">排班外</div>`;
+    }
+    bks.slice(0,2).forEach(b => {
+      const t = b.time ? `<span class="bk-chip-time">${b.time}</span>` : '';
+      h += `<div class="bk-chip">${t}${b.name}</div>`;
+    });
+    if (bks.length > 2) h += `<div class="more-chip">+${bks.length-2} 更多</div>`;
+    el.innerHTML = h;
+    el.onclick = () => openModal(cY,cM,d);
+    g.appendChild(el);
+  }
+}
+
+async function prevM(){ if(--cM<0){cM=11;cY--;} buildCal(); try { await loadAll(); buildCal(); } catch(e){ setSyncUI('err','刷新失败'); } }
+async function nextM(){ if(++cM>11){cM=0;cY++;} buildCal(); try { await loadAll(); buildCal(); } catch(e){ setSyncUI('err','刷新失败'); } }
+
+// ════════════════════════════════════════════════════════════════════════════
+// 详情弹窗
+// ════════════════════════════════════════════════════════════════════════════
+function openModal(y,m,d){
+  selD = dkey(y,m,d); editDuty = false;
+  const dt = new Date(y,m,d);
+  document.getElementById('mT').textContent = `${y}年${m+1}月${d}日 ${DNAMES[dt.getDay()]}`;
+  renderM();
+  document.getElementById('ov').classList.add('open');
+}
+
+function renderM(){
+  const mem = getMem(selD);
+  const bks = BK[selD] || [];
+  const seen = new Set();
+  const uniq = MEMBERS.filter(m => { if (seen.has(m.name)) return false; seen.add(m.name); return true; });
+  const selDt = ld(selD); const isSelWE = selDt.getDay()===0 || selDt.getDay()===6;
+
+  const dutyH = mem
+    ? `<div class="duty-box"><div class="duty-av" style="background:${mem.color}">${mem.name[0]}</div>
+        <div><div class="duty-name">${mem.name}</div><div class="duty-sub">${isSelWE?'周末值班':'今日接待负责人'}</div></div></div>`
+    : `<div style="padding:11px;background:#f8f9fa;border-radius:9px;color:#bbb;font-size:12px">${isSelWE?'周末 · 暂未指定负责人':'不在排班范围内'}</div>`;
+
+  const pickerH = editDuty
+    ? `<div class="mem-grid">${uniq.map(m => `<button class="mem-pick ${mem&&mem.name===m.name?'sel':''}" style="background:${m.color}" onclick="doSetDuty('${m.name}')">${m.name}</button>`).join('')}</div>
+       <button class="ghost-btn" onclick="toggleED()">取消</button>`
+    : `<button class="ghost-btn" onclick="toggleED()">✏️ 更换当天负责人</button>`;
+
+  const bksH = bks.length
+    ? bks.map((b,i) => `<div class="bk-item">
+        <div class="bk-top">
+          <div class="bk-name">👤 ${escapeHtml(b.name)}</div>
+          <div style="display:flex;align-items:center;gap:4px">
+            ${b.time?`<span class="bk-time-tag">${escapeHtml(b.time)}</span>`:''}
+            <button class="del-btn" onclick="doDelBk(${i})">✕</button>
+          </div>
+        </div>
+        ${b.contact||b.source?`<div class="bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}
+        <div id="noteView_${i}">
+          ${b.notes?`<div class="bk-notes-box">📝 ${escapeHtml(b.notes)}</div>`:'<div style="font-size:11px;color:#ccc;margin-top:2px">暂无跟进备注</div>'}
+          <button class="ghost-btn" style="margin-top:5px;font-size:11px" onclick="editNote(${i})">✏️ ${b.notes?'编辑':'添加'}跟进备注</button>
+        </div>
+        <div id="noteEdit_${i}" style="display:none">
+          <textarea class="bk-notes-edit" id="noteTA_${i}" placeholder="填写跟进备注...">${escapeHtml(b.notes||'')}</textarea>
+          <button class="save-notes-btn" onclick="doSaveNote(${i})">保存</button>
+          <button class="ghost-btn" style="margin-top:4px;font-size:11px" onclick="cancelNote(${i})">取消</button>
+        </div>
+      </div>`).join('')
+    : `<div class="empty-bk">暂无预约记录，在下方添加</div>`;
+
+  document.getElementById('mB').innerHTML = `
+    <div class="sec-lbl">值班负责人</div>${dutyH}
+    <div style="margin-bottom:4px">${pickerH}</div>
+    <div class="sec-lbl">看房预约记录</div>
+    <div style="margin-bottom:8px">${bksH}</div>
+    <div class="add-form">
+      <div class="add-title">＋ 新增预约</div>
+      <div class="f-row"><label class="f-lbl">客户姓名 *</label><input class="f-in" id="fN" placeholder="如：李先生 / Ms Chan"/></div>
+      <div class="f-2col">
+        <div class="f-row" style="margin-bottom:0"><label class="f-lbl">预约时间</label><input class="f-in" id="fT" placeholder="如：14:00"/></div>
+        <div class="f-row" style="margin-bottom:0"><label class="f-lbl">联系方式</label><input class="f-in" id="fC" placeholder="电话/WhatsApp"/></div>
+      </div>
+      <div class="f-row" style="margin-top:9px"><label class="f-lbl">来源 / 需求</label><input class="f-in" id="fS" placeholder="如：Awehome咨询 / 带家长看房 / 意向Studio"/></div>
+      <div class="f-row"><label class="f-lbl">跟进备注</label><textarea class="f-in" id="fO" placeholder="带看反馈、意向程度、后续跟进..."></textarea></div>
+      <button class="save-btn" onclick="doAddBk()">✓ 保存预约</button>
+    </div>`;
+}
+
+function escapeHtml(s) {
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function toggleED(){ editDuty=!editDuty; renderM(); }
+
+async function doSetDuty(n) {
+  try {
+    OV[selD] = n;
+    editDuty = false;
+    renderM(); buildCal();
+    await setOverride(selD, n);
+  } catch (e) { setSyncUI('err', '保存失败: ' + e.message); alert('保存失败: ' + e.message); }
+}
+
+function editNote(i){ document.getElementById(`noteView_${i}`).style.display='none'; document.getElementById(`noteEdit_${i}`).style.display='block'; document.getElementById(`noteTA_${i}`).focus(); }
+function cancelNote(i){ document.getElementById(`noteView_${i}`).style.display='block'; document.getElementById(`noteEdit_${i}`).style.display='none'; }
+
+async function doSaveNote(i) {
+  const b = BK[selD][i];
+  const newNotes = document.getElementById(`noteTA_${i}`).value.trim();
+  try {
+    await updateBookingNotes(b._id, newNotes);
+    b.notes = newNotes;
+    renderM(); buildCal();
+  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: ' + e.message); }
+}
+
+async function doAddBk() {
+  const nm = document.getElementById('fN').value.trim();
+  if (!nm) { alert('请填写客户姓名'); return; }
+  const b = {
+    _id: crypto.randomUUID(),
+    date: selD,
+    name: nm,
+    time:    document.getElementById('fT').value.trim(),
+    contact: document.getElementById('fC').value.trim(),
+    source:  document.getElementById('fS').value.trim(),
+    notes:   document.getElementById('fO').value.trim(),
+    ts: new Date().toISOString(),
+  };
+  try {
+    await addBookingRow({ _id:b._id, date:b.date, name:b.name, time:b.time, contact:b.contact, source:b.source, notes:b.notes, ts:b.ts });
+    if (!BK[selD]) BK[selD] = [];
+    BK[selD].push(b);
+    renderM(); buildCal();
+  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: ' + e.message); }
+}
+
+async function doDelBk(i) {
+  if (!confirm('确认删除这条预约？')) return;
+  const b = BK[selD][i];
+  try {
+    await deleteBookingRow(b._id);
+    BK[selD].splice(i,1);
+    renderM(); buildCal();
+  } catch (e) { setSyncUI('err','删除失败'); alert('删除失败: ' + e.message); }
+}
+
+function closeModal(){ document.getElementById('ov').classList.remove('open'); selD=null; }
+function closeOv(e){ if (e.target.id==='ov') closeModal(); }
+
+// ════════════════════════════════════════════════════════════════════════════
+// 汇总面板
+// ════════════════════════════════════════════════════════════════════════════
+function openSummary(){ renderSummary(); document.getElementById('sumOv').classList.add('open'); }
+function closeSummary(){ document.getElementById('sumOv').classList.remove('open'); }
+function closeSumOv(e){ if (e.target.id==='sumOv') closeSummary(); }
+
+function renderSummary(){
+  const keys = Object.keys(BK).filter(k => BK[k] && BK[k].length>0).sort();
+  const total = keys.reduce((s,k) => s+BK[k].length, 0);
+  document.getElementById('sumSub').textContent = total ? `共 ${total} 条预约 · ${keys.length} 天` : '暂无预约记录';
+  if (!keys.length) {
+    document.getElementById('sumBody').innerHTML = `<div class="sum-empty">🗓️<br><br>暂无预约记录<br><span style="font-size:12px">点击日历格子添加预约</span></div>`;
+    return;
+  }
+  document.getElementById('sumBody').innerHTML = keys.map(k => {
+    const [y,m,d] = k.split('-').map(Number);
+    const dt = new Date(y,m-1,d);
+    const mem = getMem(k);
+    return `<div class="sum-day">
+      <div class="sum-day-header">
+        <div class="sum-day-date">${parseInt(m)}月${parseInt(d)}日 ${DNAMES[dt.getDay()]}</div>
+        ${mem?`<span class="sum-day-mem" style="background:${mem.color}">${mem.name}</span>`:''}
+      </div>
+      ${BK[k].map(b => `<div class="sum-bk">
+        <div class="sum-bk-top"><div class="sum-bk-name">👤 ${escapeHtml(b.name)}</div>${b.time?`<span class="sum-bk-time">${escapeHtml(b.time)}</span>`:''}</div>
+        ${b.contact||b.source?`<div class="sum-bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}
+        ${b.notes?`<div class="sum-bk-notes">📝 ${escapeHtml(b.notes)}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+document.addEventListener('keydown', e => { if (e.key==='Escape') { closeModal(); closeSummary(); } });
+
+// 启动
+initAuth();
+</script>
+</body>
+</html>
