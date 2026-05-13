@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>香港接待排班表 · Microsoft 365</title>
 
-<!-- MSAL.js v2 -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<!-- MSAL.js v2 (with onerror fallback) -->
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.1/lib/msal-browser.min.js"
+        onerror="document.write('<script src=&quot;https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js&quot;><\/script>')"></script>
 
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -326,12 +327,17 @@ function setSyncUI(status, msg) {
 // 登录流程
 // ════════════════════════════════════════════════════════════════════════════
 async function initAuth() {
-  if (CONFIG.clientId.startsWith('__') || CONFIG.tenantId.startsWith('__') || CONFIG.fileShareUrl.startsWith('__')) {
-    bootErr('CONFIG 未填写完整', new Error('请先按部署指南填写 CONFIG.clientId / tenantId / fileShareUrl。'));
-    return;
-  }
-  msalApp = new msal.PublicClientApplication(msalConfig);
-  await msalApp.initialize();
+  try {
+    if (CONFIG.clientId.startsWith('__') || CONFIG.tenantId.startsWith('__') || CONFIG.fileShareUrl.startsWith('__')) {
+      bootErr('CONFIG 未填写完整', new Error('请先按部署指南填写 CONFIG.clientId / tenantId / fileShareUrl。'));
+      return;
+    }
+    if (typeof msal === 'undefined') {
+      bootErr('MSAL.js 加载失败', new Error('CDN 无法访问。请检查网络或公司代理是否屏蔽了 jsdelivr/msauth.net。'));
+      return;
+    }
+    msalApp = new msal.PublicClientApplication(msalConfig);
+    await msalApp.initialize();
 
   // 处理 redirect 回调
   try {
@@ -353,8 +359,9 @@ async function initAuth() {
     return;
   }
 
-  document.getElementById('userChip').textContent = '👤 ' + (account.username || account.name);
-  await bootstrap();
+    document.getElementById('userChip').textContent = '👤 ' + (account.username || account.name);
+    await bootstrap();
+  } catch (e) { bootErr('启动失败', e); }
 }
 
 async function signIn() {
