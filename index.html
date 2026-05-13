@@ -5,9 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>香港接待排班表 · Microsoft 365</title>
 
-<!-- MSAL.js v2 (with onerror fallback) -->
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.1/lib/msal-browser.min.js"
-        onerror="document.write('<script src=&quot;https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js&quot;><\/script>')"></script>
+<!-- MSAL.js v2 — 多 CDN 串行兜底；公司网络若全屏蔽，把 msal-browser.min.js 上传到仓库根目录即可走本地 -->
+<script>
+(function(){
+  var sources = [
+    './msal-browser.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js',
+    'https://unpkg.com/@azure/msal-browser@2.38.1/lib/msal-browser.min.js',
+    'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.1/lib/msal-browser.min.js',
+    'https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js'
+  ];
+  function tryNext(i){
+    if (i >= sources.length) { console.error('All MSAL CDNs failed'); return; }
+    var s = document.createElement('script');
+    s.src = sources[i];
+    s.async = false;
+    s.onerror = function(){ console.warn('MSAL CDN failed:', sources[i]); tryNext(i+1); };
+    s.onload = function(){ console.log('MSAL loaded from:', sources[i]); };
+    document.head.appendChild(s);
+  }
+  tryNext(0);
+})();
+</script>
 
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -142,11 +161,9 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 </head>
 <body>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 启动/登录屏幕 -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-card">
+    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v3 · 多 CDN 兜底 + 本地优先</div>
     <div class="loading-spinner" id="bootSpinner" style="margin: 0 auto 14px"></div>
     <h2 id="bootTitle">正在连接 Microsoft 365…</h2>
     <p id="bootMsg">如未自动跳转，请点击下方按钮登录。</p>
@@ -155,13 +172,10 @@ textarea.f-in { resize: vertical; min-height: 60px; }
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 主界面 -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="header" id="mainHeader" style="display:none">
   <div>
     <h1>🏙️ 香港接待排班表</h1>
-    <p>2026年 5月25日 – 7月31日 · 数据存储于 SharePoint Excel</p>
+    <p>2026年 5月25日 – 7月31日 · 数据存储于 OneDrive Excel</p>
   </div>
   <div class="header-right">
     <span class="user-chip" id="userChip"></span>
@@ -216,29 +230,16 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 </div>
 
 <script>
-// ════════════════════════════════════════════════════════════════════════════
-// 配置区 —— 部署前请填写下列 4 项 (其它无需修改)
-// ════════════════════════════════════════════════════════════════════════════
+// CONFIG
 const CONFIG = {
-  // ① Azure AD 应用 (Application) Client ID —— 在 Azure Portal > 应用注册 里复制
   clientId: '94e77881-1408-4985-836b-7ef89c06b3db',
-
-  // ② 租户：填你公司租户的 GUID 或域名 (如 contoso.onmicrosoft.com)；
-  //    若希望任意 Microsoft 账户都能登录可填 'common'
   tenantId: '1b21f0e0-a516-4b8a-971e-8f7a4680548c',
-
-  // ③ Excel 文件的分享链接 (OneDrive 或 SharePoint 都支持)
-  //    在 OneDrive 网页里右键文件 → Share → "可编辑" → Copy link
-  //    把整条 URL (含 ?e=xxxx 部分) 粘贴到这里
   fileShareUrl: 'https://weehur-my.sharepoint.com/:x:/g/personal/sitarazhang_weehur_com_sg/IQBiOXFtdU1cRIxn7qDdKSIvAUY0SIloUMOm8IOpWAG2ltg?e=HAYOaw',
-
-  // 表名 (除非冲突否则保持默认)
   bookingsTable: 'Bookings',
   overridesTable: 'Overrides',
   overridesSheet: 'Overrides',
 };
 
-// 团队成员定义 (与原版一致)
 const MEMBERS = [
   {name:'Sitara',   color:'#e63946', start:'2026-05-25', end:'2026-05-29'},
   {name:'Xihao',    color:'#457b9d', start:'2026-05-30', end:'2026-06-05'},
@@ -257,9 +258,6 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 const BOOK_COLS = ['ID', '日期', '客户姓名', '时间', '联系方式', '来源需求', '跟进备注', '创建时间'];
 const OVR_COLS  = ['日期', '负责人'];
 
-// ════════════════════════════════════════════════════════════════════════════
-// MSAL 初始化
-// ════════════════════════════════════════════════════════════════════════════
 const msalConfig = {
   auth: {
     clientId: CONFIG.clientId,
@@ -269,14 +267,8 @@ const msalConfig = {
   cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
 };
 
-let msalApp = null;
-let account = null;
-let driveId = null;
-let itemId = null;
-let bookRowsCache = []; // [{rowIndex, id, date, name, time, contact, source, notes, ts}]
-let ovrRowsCache = [];  // [{rowIndex, date, name}]
-
-// 业务状态 (沿用原版语义)
+let msalApp = null, account = null, driveId = null, itemId = null;
+let bookRowsCache = [], ovrRowsCache = [];
 let OV = {}, BK = {};
 let cY = 2026, cM = 4, selD = null, editDuty = false;
 
@@ -285,9 +277,6 @@ const RANGE_S = ld('2026-05-25'), RANGE_E = ld('2026-07-31');
 const DNAMES  = ['周日','周一','周二','周三','周四','周五','周六'];
 const MNAMES  = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
 
-// ════════════════════════════════════════════════════════════════════════════
-// 启动屏 UI
-// ════════════════════════════════════════════════════════════════════════════
 function setBoot(title, msg, opts) {
   document.getElementById('bootTitle').textContent = title;
   document.getElementById('bootMsg').innerHTML = msg;
@@ -299,7 +288,6 @@ function setBoot(title, msg, opts) {
   if (opts && opts.err) { errBox.style.display = 'block'; errBox.textContent = opts.err; }
   else errBox.style.display = 'none';
 }
-
 function bootErr(title, err) {
   setBoot(title, '请检查 CONFIG 配置或网络后重试。', {
     spinner: false,
@@ -307,7 +295,6 @@ function bootErr(title, err) {
     err: (err && err.message) || JSON.stringify(err),
   });
 }
-
 function showApp() {
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('mainHeader').style.display = 'flex';
@@ -315,7 +302,6 @@ function showApp() {
   document.getElementById('legendBar').style.display = 'flex';
   document.getElementById('calWrap').style.display = 'block';
 }
-
 function setSyncUI(status, msg) {
   const dot = document.getElementById('syncDot');
   const txt = document.getElementById('syncText');
@@ -323,41 +309,48 @@ function setSyncUI(status, msg) {
   txt.textContent = msg;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 登录流程
-// ════════════════════════════════════════════════════════════════════════════
+// 等 MSAL 加载 (最多 8 秒)
+function waitForMsal() {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function check() {
+      if (typeof msal !== 'undefined') return resolve();
+      if (Date.now() - start > 8000) return reject(new Error('MSAL.js 所有 CDN 均加载失败。公司网络可能屏蔽了外部 JS CDN。解决方案：把 msal-browser.min.js 上传到 GitHub 仓库根目录，与 index.html 同级 (详见部署指南)。'));
+      setTimeout(check, 200);
+    })();
+  });
+}
+
 async function initAuth() {
   try {
     if (CONFIG.clientId.startsWith('__') || CONFIG.tenantId.startsWith('__') || CONFIG.fileShareUrl.startsWith('__')) {
       bootErr('CONFIG 未填写完整', new Error('请先按部署指南填写 CONFIG.clientId / tenantId / fileShareUrl。'));
       return;
     }
-    if (typeof msal === 'undefined') {
-      bootErr('MSAL.js 加载失败', new Error('CDN 无法访问。请检查网络或公司代理是否屏蔽了 jsdelivr/msauth.net。'));
-      return;
-    }
+    setBoot('正在加载 MSAL.js…', '从 CDN 加载 Microsoft 认证库（公司网络可能需要尝试多个 CDN）');
+    await waitForMsal();
+    setBoot('正在连接 Microsoft 365…', '如未自动跳转，请点击下方按钮登录。');
+
     msalApp = new msal.PublicClientApplication(msalConfig);
     await msalApp.initialize();
 
-  // 处理 redirect 回调
-  try {
-    const resp = await msalApp.handleRedirectPromise();
-    if (resp && resp.account) account = resp.account;
-  } catch (e) { bootErr('登录回调失败', e); return; }
+    try {
+      const resp = await msalApp.handleRedirectPromise();
+      if (resp && resp.account) account = resp.account;
+    } catch (e) { bootErr('登录回调失败', e); return; }
 
-  // 检查是否已有缓存的账户
-  if (!account) {
-    const accs = msalApp.getAllAccounts();
-    if (accs.length > 0) account = accs[0];
-  }
+    if (!account) {
+      const accs = msalApp.getAllAccounts();
+      if (accs.length > 0) account = accs[0];
+    }
 
-  if (!account) {
-    setBoot('需要登录 Microsoft 365', '使用你的公司账号登录以访问 SharePoint Excel 数据。', {
-      spinner: false,
-      actions: '<button class="ms-signin-btn" onclick="signIn()"><svg class="ms-logo" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>使用 Microsoft 账户登录</button>',
-    });
-    return;
-  }
+    if (!account) {
+      setBoot('需要登录 Microsoft 365', '使用你的公司账号登录以访问 Excel 数据。', {
+        spinner: false,
+        actions: '<button class="ms-signin-btn" onclick="signIn()"><svg class="ms-logo" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>使用 Microsoft 账户登录</button>',
+      });
+      return;
+    }
 
     document.getElementById('userChip').textContent = '👤 ' + (account.username || account.name);
     await bootstrap();
@@ -368,39 +361,26 @@ async function signIn() {
   try { await msalApp.loginRedirect({ scopes: SCOPES }); }
   catch (e) { bootErr('登录失败', e); }
 }
-
 function signOut() {
-  if (msalApp && account) {
-    msalApp.logoutRedirect({ account, postLogoutRedirectUri: msalConfig.auth.redirectUri });
-  }
+  if (msalApp && account) msalApp.logoutRedirect({ account, postLogoutRedirectUri: msalConfig.auth.redirectUri });
 }
-
 async function getToken() {
   if (!msalApp || !account) throw new Error('未登录');
   try {
     const r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account });
     return r.accessToken;
   } catch (e) {
-    if (e instanceof msal.InteractionRequiredAuthError) {
-      await msalApp.acquireTokenRedirect({ scopes: SCOPES });
-    }
+    if (e instanceof msal.InteractionRequiredAuthError) { await msalApp.acquireTokenRedirect({ scopes: SCOPES }); }
     throw e;
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Graph API 封装
-// ════════════════════════════════════════════════════════════════════════════
 async function gfetch(path, opts) {
   const token = await getToken();
   const url = path.startsWith('http') ? path : GRAPH + path;
   const res = await fetch(url, {
     ...opts,
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json',
-      ...(opts && opts.headers),
-    },
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts && opts.headers) },
   });
   if (!res.ok) {
     let detail = '';
@@ -411,13 +391,11 @@ async function gfetch(path, opts) {
   return res.json();
 }
 
-// 把分享链接编码成 Graph API 的 shareId
 function encodeShareUrl(url) {
   const b64 = btoa(unescape(encodeURIComponent(url)));
   return 'u!' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// 解析 drive + item ID (通过分享链接)
 async function resolveLocation() {
   const shareId = encodeShareUrl(CONFIG.fileShareUrl);
   const item = await gfetch(`/shares/${shareId}/driveItem`);
@@ -426,49 +404,36 @@ async function resolveLocation() {
   if (!driveId || !itemId) throw new Error('无法从分享链接解析出 driveId/itemId');
 }
 
-// 文件 / 工作簿基础 URL
 function wbBase() { return `/drives/${driveId}/items/${itemId}/workbook`; }
 
-// 检查表是否存在
 async function tableExists(tableName) {
   try { await gfetch(`${wbBase()}/tables/${encodeURIComponent(tableName)}`); return true; }
   catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
 }
-
 async function worksheetExists(name) {
   try { await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(name)}`); return true; }
   catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
 }
 
-// 首次初始化：在空 xlsx 中创建两张表
 async function initWorkbook() {
   setSyncUI('busy', '正在初始化 Excel 表结构…');
-
-  // Bookings 表 (用默认 Sheet1)
   if (!(await tableExists(CONFIG.bookingsTable))) {
     const sheets = await gfetch(`${wbBase()}/worksheets`);
     const firstSheet = sheets.value[0].name;
-    // 写入表头
     const range = `A1:${String.fromCharCode(64 + BOOK_COLS.length)}1`;
     await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/range(address='${range}')`, {
       method: 'PATCH', body: JSON.stringify({ values: [BOOK_COLS] }),
     });
-    // 建表
     const t = await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/tables/add`, {
       method: 'POST', body: JSON.stringify({ address: `${firstSheet}!${range}`, hasHeaders: true }),
     });
-    // 重命名
     await gfetch(`${wbBase()}/tables/${t.id}`, {
       method: 'PATCH', body: JSON.stringify({ name: CONFIG.bookingsTable }),
     });
   }
-
-  // Overrides 表 (独立 sheet)
   if (!(await tableExists(CONFIG.overridesTable))) {
     if (!(await worksheetExists(CONFIG.overridesSheet))) {
-      await gfetch(`${wbBase()}/worksheets/add`, {
-        method: 'POST', body: JSON.stringify({ name: CONFIG.overridesSheet }),
-      });
+      await gfetch(`${wbBase()}/worksheets/add`, { method: 'POST', body: JSON.stringify({ name: CONFIG.overridesSheet }) });
     }
     const range = `A1:${String.fromCharCode(64 + OVR_COLS.length)}1`;
     await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(CONFIG.overridesSheet)}/range(address='${range}')`, {
@@ -483,11 +448,7 @@ async function initWorkbook() {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 数据加载 / 写入
-// ════════════════════════════════════════════════════════════════════════════
 async function fetchTableRows(tableName) {
-  // 一次性拉全部行；Graph 默认分页可能截断，使用 $top + nextLink
   let rows = [];
   let url = `${wbBase()}/tables/${encodeURIComponent(tableName)}/rows?$top=2000`;
   while (url) {
@@ -504,25 +465,12 @@ async function loadAll() {
     fetchTableRows(CONFIG.bookingsTable),
     fetchTableRows(CONFIG.overridesTable),
   ]);
-
   bookRowsCache = bk.map(r => ({
-    rowIndex: r.index,
-    id:      r.values[0][0],
-    date:    r.values[0][1],
-    name:    r.values[0][2],
-    time:    r.values[0][3],
-    contact: r.values[0][4],
-    source:  r.values[0][5],
-    notes:   r.values[0][6],
-    ts:      r.values[0][7],
+    rowIndex: r.index, id: r.values[0][0], date: r.values[0][1], name: r.values[0][2],
+    time: r.values[0][3], contact: r.values[0][4], source: r.values[0][5], notes: r.values[0][6], ts: r.values[0][7],
   }));
-  ovrRowsCache = ov.map(r => ({
-    rowIndex: r.index,
-    date: r.values[0][0],
-    name: r.values[0][1],
-  }));
+  ovrRowsCache = ov.map(r => ({ rowIndex: r.index, date: r.values[0][0], name: r.values[0][1] }));
 
-  // 转换为业务结构
   BK = {};
   for (const r of bookRowsCache) {
     if (!r.date) continue;
@@ -545,32 +493,25 @@ async function addBookingRow(b) {
   bookRowsCache.push({ rowIndex: resp.index, ...b });
   setSyncUI('ok', '已保存');
 }
-
 async function deleteBookingRow(bookingId) {
   setSyncUI('busy', '正在删除…');
-  // 先刷新 rowIndex（其它人删除会让索引漂移）
   const rows = await fetchTableRows(CONFIG.bookingsTable);
   const target = rows.find(r => r.values[0][0] === bookingId);
   if (!target) throw new Error('未找到对应行，请刷新');
-  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, {
-    method: 'DELETE',
-  });
+  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, { method: 'DELETE' });
   setSyncUI('ok', '已删除');
 }
-
 async function updateBookingNotes(bookingId, newNotes) {
   setSyncUI('busy', '正在保存…');
   const rows = await fetchTableRows(CONFIG.bookingsTable);
   const target = rows.find(r => r.values[0][0] === bookingId);
   if (!target) throw new Error('未找到对应行，请刷新');
-  // 列 G (index 6) = 跟进备注
   const newValues = [...target.values[0]]; newValues[6] = newNotes;
   await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, {
     method: 'PATCH', body: JSON.stringify({ values: [newValues] }),
   });
   setSyncUI('ok', '已保存');
 }
-
 async function setOverride(dateStr, memberName) {
   setSyncUI('busy', '正在保存负责人…');
   const rows = await fetchTableRows(CONFIG.overridesTable);
@@ -587,19 +528,12 @@ async function setOverride(dateStr, memberName) {
   setSyncUI('ok', '已保存');
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 启动序列
-// ════════════════════════════════════════════════════════════════════════════
 async function bootstrap() {
   try {
     setBoot('正在解析文件位置…', '通过分享链接查找 Excel…');
     await resolveLocation();
-  } catch (e) {
-    bootErr('无法访问 Excel 文件', e);
-    return;
-  }
+  } catch (e) { bootErr('无法访问 Excel 文件', e); return; }
 
-  // 检查表结构
   try {
     setBoot('检查 Excel 表结构…', '');
     const [hasB, hasO] = await Promise.all([
@@ -607,7 +541,7 @@ async function bootstrap() {
       tableExists(CONFIG.overridesTable),
     ]);
     if (!hasB || !hasO) {
-      setBoot('Excel 尚未初始化', `检测到文件已存在但缺少表结构。点击下方按钮，自动创建 <b>${CONFIG.bookingsTable}</b> 和 <b>${CONFIG.overridesTable}</b> 两张表。<br><br>(只需执行一次)`, {
+      setBoot('Excel 尚未初始化', `检测到文件已存在但缺少表结构。点击下方按钮自动创建 <b>${CONFIG.bookingsTable}</b> 和 <b>${CONFIG.overridesTable}</b> 两张表。<br><br>(只需执行一次)`, {
         spinner: false,
         actions: '<button class="init-btn" onclick="runInit()">⚙️ 初始化表结构</button>',
       });
@@ -615,7 +549,6 @@ async function bootstrap() {
     }
   } catch (e) { bootErr('检查表结构失败', e); return; }
 
-  // 拉数据
   try {
     setBoot('正在加载排班数据…', '');
     await loadAll();
@@ -639,19 +572,14 @@ async function manualRefresh() {
   catch (e) { setSyncUI('err', '刷新失败: ' + e.message); }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 渲染：图例 + 日历 (与原版语义相同)
-// ════════════════════════════════════════════════════════════════════════════
 function renderLegend() {
   const seen = new Set();
   document.getElementById('lgd').innerHTML = MEMBERS
     .filter(m => { if (seen.has(m.name)) return false; seen.add(m.name); return true; })
-    .map(m => `<div class="legend-item"><div class="legend-dot" style="background:${m.color}"></div>${m.name}</div>`)
-    .join('');
+    .map(m => `<div class="legend-item"><div class="legend-dot" style="background:${m.color}"></div>${m.name}</div>`).join('');
 }
 
 function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
-
 function getMem(ds){
   if (OV[ds]) { const c=[...MEMBERS].reverse().find(x=>x.name===OV[ds]); return {name:OV[ds], color:c?c.color:'#888'}; }
   const dt=ld(ds);
@@ -667,9 +595,7 @@ function buildCal(){
   const offset = (new Date(cY,cM,1).getDay()+6)%7;
   const dim = new Date(cY,cM+1,0).getDate();
   const today = new Date();
-
   for (let i=0; i<offset; i++) { const e=document.createElement('div'); e.className='day-cell empty'; g.appendChild(e); }
-
   for (let d=1; d<=dim; d++) {
     const dt=new Date(cY,cM,d);
     const dow=dt.getDay();
@@ -679,17 +605,13 @@ function buildCal(){
     const bks = BK[key] || [];
     const inR = dt>=RANGE_S && dt<=RANGE_E;
     const isT = dt.toDateString() === today.toDateString();
-
     const el = document.createElement('div');
     el.className = ['day-cell', isWE?'we':'', isT?'today':'', !inR?'oor':''].filter(Boolean).join(' ');
-
     let h = `<div class="day-num">${cM+1}/${d}</div>`;
     if (inR) {
       if (isWE) h += `<div class="we-note">自行调整</div>`;
       if (mem && !isWE) h += `<div class="mem-tag" style="background:${mem.color}">${mem.name}</div>`;
-    } else {
-      h += `<div style="font-size:10px;color:#ccc">排班外</div>`;
-    }
+    } else h += `<div style="font-size:10px;color:#ccc">排班外</div>`;
     bks.slice(0,2).forEach(b => {
       const t = b.time ? `<span class="bk-chip-time">${b.time}</span>` : '';
       h += `<div class="bk-chip">${t}${b.name}</div>`;
@@ -704,9 +626,6 @@ function buildCal(){
 async function prevM(){ if(--cM<0){cM=11;cY--;} buildCal(); try { await loadAll(); buildCal(); } catch(e){ setSyncUI('err','刷新失败'); } }
 async function nextM(){ if(++cM>11){cM=0;cY++;} buildCal(); try { await loadAll(); buildCal(); } catch(e){ setSyncUI('err','刷新失败'); } }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 详情弹窗
-// ════════════════════════════════════════════════════════════════════════════
 function openModal(y,m,d){
   selD = dkey(y,m,d); editDuty = false;
   const dt = new Date(y,m,d);
@@ -714,162 +633,81 @@ function openModal(y,m,d){
   renderM();
   document.getElementById('ov').classList.add('open');
 }
-
+function escapeHtml(s) { return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toggleED(){ editDuty=!editDuty; renderM(); }
+async function doSetDuty(n) {
+  try { OV[selD]=n; editDuty=false; renderM(); buildCal(); await setOverride(selD,n); }
+  catch (e) { setSyncUI('err','保存失败: '+e.message); alert('保存失败: '+e.message); }
+}
+function editNote(i){ document.getElementById(`noteView_${i}`).style.display='none'; document.getElementById(`noteEdit_${i}`).style.display='block'; document.getElementById(`noteTA_${i}`).focus(); }
+function cancelNote(i){ document.getElementById(`noteView_${i}`).style.display='block'; document.getElementById(`noteEdit_${i}`).style.display='none'; }
+async function doSaveNote(i) {
+  const b = BK[selD][i];
+  const newNotes = document.getElementById(`noteTA_${i}`).value.trim();
+  try { await updateBookingNotes(b._id, newNotes); b.notes=newNotes; renderM(); buildCal(); }
+  catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
+}
+async function doAddBk() {
+  const nm = document.getElementById('fN').value.trim();
+  if (!nm) { alert('请填写客户姓名'); return; }
+  const b = {
+    _id: crypto.randomUUID(), date: selD, name: nm,
+    time: document.getElementById('fT').value.trim(),
+    contact: document.getElementById('fC').value.trim(),
+    source: document.getElementById('fS').value.trim(),
+    notes: document.getElementById('fO').value.trim(),
+    ts: new Date().toISOString(),
+  };
+  try {
+    await addBookingRow(b);
+    if (!BK[selD]) BK[selD] = [];
+    BK[selD].push(b);
+    renderM(); buildCal();
+  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
+}
+async function doDelBk(i) {
+  if (!confirm('确认删除这条预约？')) return;
+  const b = BK[selD][i];
+  try { await deleteBookingRow(b._id); BK[selD].splice(i,1); renderM(); buildCal(); }
+  catch (e) { setSyncUI('err','删除失败'); alert('删除失败: '+e.message); }
+}
 function renderM(){
   const mem = getMem(selD);
   const bks = BK[selD] || [];
   const seen = new Set();
   const uniq = MEMBERS.filter(m => { if (seen.has(m.name)) return false; seen.add(m.name); return true; });
   const selDt = ld(selD); const isSelWE = selDt.getDay()===0 || selDt.getDay()===6;
-
   const dutyH = mem
-    ? `<div class="duty-box"><div class="duty-av" style="background:${mem.color}">${mem.name[0]}</div>
-        <div><div class="duty-name">${mem.name}</div><div class="duty-sub">${isSelWE?'周末值班':'今日接待负责人'}</div></div></div>`
+    ? `<div class="duty-box"><div class="duty-av" style="background:${mem.color}">${mem.name[0]}</div><div><div class="duty-name">${mem.name}</div><div class="duty-sub">${isSelWE?'周末值班':'今日接待负责人'}</div></div></div>`
     : `<div style="padding:11px;background:#f8f9fa;border-radius:9px;color:#bbb;font-size:12px">${isSelWE?'周末 · 暂未指定负责人':'不在排班范围内'}</div>`;
-
   const pickerH = editDuty
-    ? `<div class="mem-grid">${uniq.map(m => `<button class="mem-pick ${mem&&mem.name===m.name?'sel':''}" style="background:${m.color}" onclick="doSetDuty('${m.name}')">${m.name}</button>`).join('')}</div>
-       <button class="ghost-btn" onclick="toggleED()">取消</button>`
+    ? `<div class="mem-grid">${uniq.map(m => `<button class="mem-pick ${mem&&mem.name===m.name?'sel':''}" style="background:${m.color}" onclick="doSetDuty('${m.name}')">${m.name}</button>`).join('')}</div><button class="ghost-btn" onclick="toggleED()">取消</button>`
     : `<button class="ghost-btn" onclick="toggleED()">✏️ 更换当天负责人</button>`;
-
   const bksH = bks.length
-    ? bks.map((b,i) => `<div class="bk-item">
-        <div class="bk-top">
-          <div class="bk-name">👤 ${escapeHtml(b.name)}</div>
-          <div style="display:flex;align-items:center;gap:4px">
-            ${b.time?`<span class="bk-time-tag">${escapeHtml(b.time)}</span>`:''}
-            <button class="del-btn" onclick="doDelBk(${i})">✕</button>
-          </div>
-        </div>
-        ${b.contact||b.source?`<div class="bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}
-        <div id="noteView_${i}">
-          ${b.notes?`<div class="bk-notes-box">📝 ${escapeHtml(b.notes)}</div>`:'<div style="font-size:11px;color:#ccc;margin-top:2px">暂无跟进备注</div>'}
-          <button class="ghost-btn" style="margin-top:5px;font-size:11px" onclick="editNote(${i})">✏️ ${b.notes?'编辑':'添加'}跟进备注</button>
-        </div>
-        <div id="noteEdit_${i}" style="display:none">
-          <textarea class="bk-notes-edit" id="noteTA_${i}" placeholder="填写跟进备注...">${escapeHtml(b.notes||'')}</textarea>
-          <button class="save-notes-btn" onclick="doSaveNote(${i})">保存</button>
-          <button class="ghost-btn" style="margin-top:4px;font-size:11px" onclick="cancelNote(${i})">取消</button>
-        </div>
-      </div>`).join('')
+    ? bks.map((b,i) => `<div class="bk-item"><div class="bk-top"><div class="bk-name">👤 ${escapeHtml(b.name)}</div><div style="display:flex;align-items:center;gap:4px">${b.time?`<span class="bk-time-tag">${escapeHtml(b.time)}</span>`:''}<button class="del-btn" onclick="doDelBk(${i})">✕</button></div></div>${b.contact||b.source?`<div class="bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}<div id="noteView_${i}">${b.notes?`<div class="bk-notes-box">📝 ${escapeHtml(b.notes)}</div>`:'<div style="font-size:11px;color:#ccc;margin-top:2px">暂无跟进备注</div>'}<button class="ghost-btn" style="margin-top:5px;font-size:11px" onclick="editNote(${i})">✏️ ${b.notes?'编辑':'添加'}跟进备注</button></div><div id="noteEdit_${i}" style="display:none"><textarea class="bk-notes-edit" id="noteTA_${i}" placeholder="填写跟进备注...">${escapeHtml(b.notes||'')}</textarea><button class="save-notes-btn" onclick="doSaveNote(${i})">保存</button><button class="ghost-btn" style="margin-top:4px;font-size:11px" onclick="cancelNote(${i})">取消</button></div></div>`).join('')
     : `<div class="empty-bk">暂无预约记录，在下方添加</div>`;
-
-  document.getElementById('mB').innerHTML = `
-    <div class="sec-lbl">值班负责人</div>${dutyH}
-    <div style="margin-bottom:4px">${pickerH}</div>
-    <div class="sec-lbl">看房预约记录</div>
-    <div style="margin-bottom:8px">${bksH}</div>
-    <div class="add-form">
-      <div class="add-title">＋ 新增预约</div>
-      <div class="f-row"><label class="f-lbl">客户姓名 *</label><input class="f-in" id="fN" placeholder="如：李先生 / Ms Chan"/></div>
-      <div class="f-2col">
-        <div class="f-row" style="margin-bottom:0"><label class="f-lbl">预约时间</label><input class="f-in" id="fT" placeholder="如：14:00"/></div>
-        <div class="f-row" style="margin-bottom:0"><label class="f-lbl">联系方式</label><input class="f-in" id="fC" placeholder="电话/WhatsApp"/></div>
-      </div>
-      <div class="f-row" style="margin-top:9px"><label class="f-lbl">来源 / 需求</label><input class="f-in" id="fS" placeholder="如：Awehome咨询 / 带家长看房 / 意向Studio"/></div>
-      <div class="f-row"><label class="f-lbl">跟进备注</label><textarea class="f-in" id="fO" placeholder="带看反馈、意向程度、后续跟进..."></textarea></div>
-      <button class="save-btn" onclick="doAddBk()">✓ 保存预约</button>
-    </div>`;
+  document.getElementById('mB').innerHTML = `<div class="sec-lbl">值班负责人</div>${dutyH}<div style="margin-bottom:4px">${pickerH}</div><div class="sec-lbl">看房预约记录</div><div style="margin-bottom:8px">${bksH}</div><div class="add-form"><div class="add-title">＋ 新增预约</div><div class="f-row"><label class="f-lbl">客户姓名 *</label><input class="f-in" id="fN" placeholder="如：李先生 / Ms Chan"/></div><div class="f-2col"><div class="f-row" style="margin-bottom:0"><label class="f-lbl">预约时间</label><input class="f-in" id="fT" placeholder="如：14:00"/></div><div class="f-row" style="margin-bottom:0"><label class="f-lbl">联系方式</label><input class="f-in" id="fC" placeholder="电话/WhatsApp"/></div></div><div class="f-row" style="margin-top:9px"><label class="f-lbl">来源 / 需求</label><input class="f-in" id="fS" placeholder="如：Awehome咨询 / 带家长看房 / 意向Studio"/></div><div class="f-row"><label class="f-lbl">跟进备注</label><textarea class="f-in" id="fO" placeholder="带看反馈、意向程度、后续跟进..."></textarea></div><button class="save-btn" onclick="doAddBk()">✓ 保存预约</button></div>`;
 }
-
-function escapeHtml(s) {
-  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function toggleED(){ editDuty=!editDuty; renderM(); }
-
-async function doSetDuty(n) {
-  try {
-    OV[selD] = n;
-    editDuty = false;
-    renderM(); buildCal();
-    await setOverride(selD, n);
-  } catch (e) { setSyncUI('err', '保存失败: ' + e.message); alert('保存失败: ' + e.message); }
-}
-
-function editNote(i){ document.getElementById(`noteView_${i}`).style.display='none'; document.getElementById(`noteEdit_${i}`).style.display='block'; document.getElementById(`noteTA_${i}`).focus(); }
-function cancelNote(i){ document.getElementById(`noteView_${i}`).style.display='block'; document.getElementById(`noteEdit_${i}`).style.display='none'; }
-
-async function doSaveNote(i) {
-  const b = BK[selD][i];
-  const newNotes = document.getElementById(`noteTA_${i}`).value.trim();
-  try {
-    await updateBookingNotes(b._id, newNotes);
-    b.notes = newNotes;
-    renderM(); buildCal();
-  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: ' + e.message); }
-}
-
-async function doAddBk() {
-  const nm = document.getElementById('fN').value.trim();
-  if (!nm) { alert('请填写客户姓名'); return; }
-  const b = {
-    _id: crypto.randomUUID(),
-    date: selD,
-    name: nm,
-    time:    document.getElementById('fT').value.trim(),
-    contact: document.getElementById('fC').value.trim(),
-    source:  document.getElementById('fS').value.trim(),
-    notes:   document.getElementById('fO').value.trim(),
-    ts: new Date().toISOString(),
-  };
-  try {
-    await addBookingRow({ _id:b._id, date:b.date, name:b.name, time:b.time, contact:b.contact, source:b.source, notes:b.notes, ts:b.ts });
-    if (!BK[selD]) BK[selD] = [];
-    BK[selD].push(b);
-    renderM(); buildCal();
-  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: ' + e.message); }
-}
-
-async function doDelBk(i) {
-  if (!confirm('确认删除这条预约？')) return;
-  const b = BK[selD][i];
-  try {
-    await deleteBookingRow(b._id);
-    BK[selD].splice(i,1);
-    renderM(); buildCal();
-  } catch (e) { setSyncUI('err','删除失败'); alert('删除失败: ' + e.message); }
-}
-
 function closeModal(){ document.getElementById('ov').classList.remove('open'); selD=null; }
 function closeOv(e){ if (e.target.id==='ov') closeModal(); }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 汇总面板
-// ════════════════════════════════════════════════════════════════════════════
 function openSummary(){ renderSummary(); document.getElementById('sumOv').classList.add('open'); }
 function closeSummary(){ document.getElementById('sumOv').classList.remove('open'); }
 function closeSumOv(e){ if (e.target.id==='sumOv') closeSummary(); }
-
 function renderSummary(){
   const keys = Object.keys(BK).filter(k => BK[k] && BK[k].length>0).sort();
   const total = keys.reduce((s,k) => s+BK[k].length, 0);
   document.getElementById('sumSub').textContent = total ? `共 ${total} 条预约 · ${keys.length} 天` : '暂无预约记录';
-  if (!keys.length) {
-    document.getElementById('sumBody').innerHTML = `<div class="sum-empty">🗓️<br><br>暂无预约记录<br><span style="font-size:12px">点击日历格子添加预约</span></div>`;
-    return;
-  }
+  if (!keys.length) { document.getElementById('sumBody').innerHTML = `<div class="sum-empty">🗓️<br><br>暂无预约记录<br><span style="font-size:12px">点击日历格子添加预约</span></div>`; return; }
   document.getElementById('sumBody').innerHTML = keys.map(k => {
     const [y,m,d] = k.split('-').map(Number);
     const dt = new Date(y,m-1,d);
     const mem = getMem(k);
-    return `<div class="sum-day">
-      <div class="sum-day-header">
-        <div class="sum-day-date">${parseInt(m)}月${parseInt(d)}日 ${DNAMES[dt.getDay()]}</div>
-        ${mem?`<span class="sum-day-mem" style="background:${mem.color}">${mem.name}</span>`:''}
-      </div>
-      ${BK[k].map(b => `<div class="sum-bk">
-        <div class="sum-bk-top"><div class="sum-bk-name">👤 ${escapeHtml(b.name)}</div>${b.time?`<span class="sum-bk-time">${escapeHtml(b.time)}</span>`:''}</div>
-        ${b.contact||b.source?`<div class="sum-bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}
-        ${b.notes?`<div class="sum-bk-notes">📝 ${escapeHtml(b.notes)}</div>`:''}
-      </div>`).join('')}
-    </div>`;
+    return `<div class="sum-day"><div class="sum-day-header"><div class="sum-day-date">${parseInt(m)}月${parseInt(d)}日 ${DNAMES[dt.getDay()]}</div>${mem?`<span class="sum-day-mem" style="background:${mem.color}">${mem.name}</span>`:''}</div>${BK[k].map(b => `<div class="sum-bk"><div class="sum-bk-top"><div class="sum-bk-name">👤 ${escapeHtml(b.name)}</div>${b.time?`<span class="sum-bk-time">${escapeHtml(b.time)}</span>`:''}</div>${b.contact||b.source?`<div class="sum-bk-meta">${escapeHtml([b.contact,b.source].filter(Boolean).join(' · '))}</div>`:''}${b.notes?`<div class="sum-bk-notes">📝 ${escapeHtml(b.notes)}</div>`:''}</div>`).join('')}</div>`;
   }).join('');
 }
-
 document.addEventListener('keydown', e => { if (e.key==='Escape') { closeModal(); closeSummary(); } });
 
-// 启动
 initAuth();
 </script>
 </body>
