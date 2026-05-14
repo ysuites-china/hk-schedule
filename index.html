@@ -3,31 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>香港接待排班表 · Microsoft 365</title>
-
-<!-- MSAL.js v2 — 多 CDN 串行兜底；公司网络若全屏蔽，把 msal-browser.min.js 上传到仓库根目录即可走本地 -->
-<script>
-(function(){
-  var sources = [
-    './msal-browser.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js',
-    'https://unpkg.com/@azure/msal-browser@2.38.1/lib/msal-browser.min.js',
-    'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.1/lib/msal-browser.min.js',
-    'https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js'
-  ];
-  function tryNext(i){
-    if (i >= sources.length) { console.error('All MSAL CDNs failed'); return; }
-    var s = document.createElement('script');
-    s.src = sources[i];
-    s.async = false;
-    s.onerror = function(){ console.warn('MSAL CDN failed:', sources[i]); tryNext(i+1); };
-    s.onload = function(){ console.log('MSAL loaded from:', sources[i]); };
-    document.head.appendChild(s);
-  }
-  tryNext(0);
-})();
-</script>
-
+<title>香港接待排班表</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
@@ -44,8 +20,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .summary-btn:hover { background: #c1121f; }
 .refresh-btn { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-size: 13px; }
 .refresh-btn:hover { background: rgba(255,255,255,0.22); }
-.user-chip { font-size: 11px; color: rgba(255,255,255,0.7); padding: 4px 10px; background: rgba(255,255,255,0.08); border-radius: 6px; }
-.signout-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
 
 .sync-bar { background: #1a1a2e; color: rgba(255,255,255,0.6); font-size: 11px; padding: 5px 28px; display: flex; align-items: center; gap: 8px; }
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
@@ -148,25 +122,21 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 .loading-screen { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; gap: 14px; padding: 20px; }
 .loading-spinner { width: 36px; height: 36px; border: 3px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: #888; }
 .loading-card { background: white; border-radius: 14px; padding: 28px 32px; max-width: 460px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.08); text-align: center; }
 .loading-card h2 { font-size: 17px; margin-bottom: 8px; color: #1a1a2e; }
 .loading-card p { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.6; }
-.ms-signin-btn { background: #2f2f2f; color: white; border: none; padding: 11px 20px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
-.ms-signin-btn:hover { background: #1a1a1a; }
-.ms-logo { width: 18px; height: 18px; }
-.init-btn { background: #e63946; color: white; border: none; padding: 9px 18px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 12px; }
 .err-box { background: #fff0f0; border: 1px solid #ffcccc; color: #c0392b; padding: 10px 14px; border-radius: 8px; font-size: 12px; margin-top: 12px; text-align: left; line-height: 1.6; }
+.reload-btn { background: #e63946; color: white; border: none; padding: 9px 18px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
 </style>
 </head>
 <body>
 
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-card">
-    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v3 · 多 CDN 兜底 + 本地优先</div>
+    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v5 · Google Sheets 后端（免登录）</div>
     <div class="loading-spinner" id="bootSpinner" style="margin: 0 auto 14px"></div>
-    <h2 id="bootTitle">正在连接 Microsoft 365…</h2>
-    <p id="bootMsg">如未自动跳转，请点击下方按钮登录。</p>
+    <h2 id="bootTitle">正在加载共享数据…</h2>
+    <p id="bootMsg">从 Google Sheets 拉取最新预约</p>
     <div id="bootActions"></div>
     <div id="bootErr" class="err-box" style="display:none"></div>
   </div>
@@ -175,18 +145,16 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 <div class="header" id="mainHeader" style="display:none">
   <div>
     <h1>🏙️ 香港接待排班表</h1>
-    <p>2026年 5月25日 – 7月31日 · 数据存储于 OneDrive Excel</p>
+    <p>2026年 5月25日 – 7月31日 · 数据存储于 Google Sheets</p>
   </div>
   <div class="header-right">
-    <span class="user-chip" id="userChip"></span>
-    <button class="refresh-btn" onclick="manualRefresh()" title="重新从 Excel 拉取数据">🔄 刷新</button>
+    <button class="refresh-btn" onclick="manualRefresh()" title="重新从 Google Sheets 拉取数据">🔄 刷新</button>
     <button class="summary-btn" onclick="openSummary()">📋 预约汇总</button>
     <div class="month-nav">
       <button class="nav-btn" onclick="prevM()">‹</button>
       <div class="month-label" id="mLabel"></div>
       <button class="nav-btn" onclick="nextM()">›</button>
     </div>
-    <button class="signout-btn" onclick="signOut()">退出</button>
   </div>
 </div>
 
@@ -230,14 +198,11 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 </div>
 
 <script>
-// CONFIG
+// ════════════════════════════════════════════════════════════════════════════
+// CONFIG —— 部署 Apps Script 后把 webhook URL 填这里
+// ════════════════════════════════════════════════════════════════════════════
 const CONFIG = {
-  clientId: '94e77881-1408-4985-836b-7ef89c06b3db',
-  tenantId: '1b21f0e0-a516-4b8a-971e-8f7a4680548c',
-  fileShareUrl: 'https://weehur-my.sharepoint.com/:x:/g/personal/sitarazhang_weehur_com_sg/IQBiOXFtdU1cRIxn7qDdKSIvAUY0SIloUMOm8IOpWAG2ltg?e=HAYOaw',
-  bookingsTable: 'Bookings',
-  overridesTable: 'Overrides',
-  overridesSheet: 'Overrides',
+  webhookUrl: 'https://script.google.com/macros/s/AKfycbwErv8qsAt8J5vK8UkiLlJkR_5lakXtkWd-fqsqn4PdkivzVUS0zw_RcGFacdqTnwDLcg/exec',
 };
 
 const MEMBERS = [
@@ -253,22 +218,6 @@ const MEMBERS = [
   {name:'Sitara',   color:'#e63946', start:'2026-07-24', end:'2026-07-31'},
 ];
 
-const SCOPES = ['User.Read', 'Sites.ReadWrite.All', 'Files.ReadWrite.All'];
-const GRAPH = 'https://graph.microsoft.com/v1.0';
-const BOOK_COLS = ['ID', '日期', '客户姓名', '时间', '联系方式', '来源需求', '跟进备注', '创建时间'];
-const OVR_COLS  = ['日期', '负责人'];
-
-const msalConfig = {
-  auth: {
-    clientId: CONFIG.clientId,
-    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-    redirectUri: window.location.origin + window.location.pathname,
-  },
-  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
-};
-
-let msalApp = null, account = null, driveId = null, itemId = null;
-let bookRowsCache = [], ovrRowsCache = [];
 let OV = {}, BK = {};
 let cY = 2026, cM = 4, selD = null, editDuty = false;
 
@@ -281,17 +230,16 @@ function setBoot(title, msg, opts) {
   document.getElementById('bootTitle').textContent = title;
   document.getElementById('bootMsg').innerHTML = msg;
   const sp = document.getElementById('bootSpinner');
-  const actions = document.getElementById('bootActions');
   const errBox = document.getElementById('bootErr');
   sp.style.display = (opts && opts.spinner === false) ? 'none' : 'block';
-  actions.innerHTML = (opts && opts.actions) || '';
+  document.getElementById('bootActions').innerHTML = (opts && opts.actions) || '';
   if (opts && opts.err) { errBox.style.display = 'block'; errBox.textContent = opts.err; }
   else errBox.style.display = 'none';
 }
 function bootErr(title, err) {
-  setBoot(title, '请检查 CONFIG 配置或网络后重试。', {
+  setBoot(title, '请检查 CONFIG.webhookUrl 和网络后重试。', {
     spinner: false,
-    actions: '<button class="ms-signin-btn" onclick="location.reload()">重新加载</button>',
+    actions: '<button class="reload-btn" onclick="location.reload()">重新加载</button>',
     err: (err && err.message) || JSON.stringify(err),
   });
 }
@@ -309,262 +257,50 @@ function setSyncUI(status, msg) {
   txt.textContent = msg;
 }
 
-// 等 MSAL 加载 (最多 8 秒)
-function waitForMsal() {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    (function check() {
-      if (typeof msal !== 'undefined') return resolve();
-      if (Date.now() - start > 8000) return reject(new Error('MSAL.js 所有 CDN 均加载失败。公司网络可能屏蔽了外部 JS CDN。解决方案：把 msal-browser.min.js 上传到 GitHub 仓库根目录，与 index.html 同级 (详见部署指南)。'));
-      setTimeout(check, 200);
-    })();
+// ════════════════════════════════════════════════════════════════════════════
+// API —— 用 text/plain 避免 CORS 预检
+// ════════════════════════════════════════════════════════════════════════════
+async function api(action, data) {
+  if (!CONFIG.webhookUrl || CONFIG.webhookUrl.startsWith('__')) {
+    throw new Error('CONFIG.webhookUrl 未配置');
+  }
+  const res = await fetch(CONFIG.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, ...(data || {}) }),
+    redirect: 'follow',
   });
-}
-
-async function initAuth() {
-  try {
-    if (CONFIG.clientId.startsWith('__') || CONFIG.tenantId.startsWith('__') || CONFIG.fileShareUrl.startsWith('__')) {
-      bootErr('CONFIG 未填写完整', new Error('请先按部署指南填写 CONFIG.clientId / tenantId / fileShareUrl。'));
-      return;
-    }
-    setBoot('正在加载 MSAL.js…', '从 CDN 加载 Microsoft 认证库（公司网络可能需要尝试多个 CDN）');
-    await waitForMsal();
-    setBoot('正在连接 Microsoft 365…', '如未自动跳转，请点击下方按钮登录。');
-
-    msalApp = new msal.PublicClientApplication(msalConfig);
-    await msalApp.initialize();
-
-    try {
-      const resp = await msalApp.handleRedirectPromise();
-      if (resp && resp.account) account = resp.account;
-    } catch (e) { bootErr('登录回调失败', e); return; }
-
-    if (!account) {
-      const accs = msalApp.getAllAccounts();
-      if (accs.length > 0) account = accs[0];
-    }
-
-    if (!account) {
-      setBoot('需要登录 Microsoft 365', '使用你的公司账号登录以访问 Excel 数据。', {
-        spinner: false,
-        actions: '<button class="ms-signin-btn" onclick="signIn()"><svg class="ms-logo" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>使用 Microsoft 账户登录</button>',
-      });
-      return;
-    }
-
-    document.getElementById('userChip').textContent = '👤 ' + (account.username || account.name);
-    await bootstrap();
-  } catch (e) { bootErr('启动失败', e); }
-}
-
-async function signIn() {
-  try { await msalApp.loginRedirect({ scopes: SCOPES }); }
-  catch (e) { bootErr('登录失败', e); }
-}
-function signOut() {
-  if (msalApp && account) msalApp.logoutRedirect({ account, postLogoutRedirectUri: msalConfig.auth.redirectUri });
-}
-async function getToken() {
-  if (!msalApp || !account) throw new Error('未登录');
-  try {
-    const r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account });
-    return r.accessToken;
-  } catch (e) {
-    if (e instanceof msal.InteractionRequiredAuthError) { await msalApp.acquireTokenRedirect({ scopes: SCOPES }); }
-    throw e;
-  }
-}
-
-async function gfetch(path, opts) {
-  const token = await getToken();
-  const url = path.startsWith('http') ? path : GRAPH + path;
-  const res = await fetch(url, {
-    ...opts,
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts && opts.headers) },
-  });
-  if (!res.ok) {
-    let detail = '';
-    try { detail = JSON.stringify(await res.json()); } catch {}
-    throw new Error(`Graph ${res.status}: ${detail || res.statusText}`);
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
-
-function encodeShareUrl(url) {
-  const b64 = btoa(unescape(encodeURIComponent(url)));
-  return 'u!' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function resolveLocation() {
-  const shareId = encodeShareUrl(CONFIG.fileShareUrl);
-  const item = await gfetch(`/shares/${shareId}/driveItem`);
-  driveId = item.parentReference && item.parentReference.driveId;
-  itemId = item.id;
-  if (!driveId || !itemId) throw new Error('无法从分享链接解析出 driveId/itemId');
-}
-
-function wbBase() { return `/drives/${driveId}/items/${itemId}/workbook`; }
-
-async function tableExists(tableName) {
-  try { await gfetch(`${wbBase()}/tables/${encodeURIComponent(tableName)}`); return true; }
-  catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
-}
-async function worksheetExists(name) {
-  try { await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(name)}`); return true; }
-  catch (e) { if (String(e.message).includes('404') || String(e.message).includes('ItemNotFound')) return false; throw e; }
-}
-
-async function initWorkbook() {
-  setSyncUI('busy', '正在初始化 Excel 表结构…');
-  if (!(await tableExists(CONFIG.bookingsTable))) {
-    const sheets = await gfetch(`${wbBase()}/worksheets`);
-    const firstSheet = sheets.value[0].name;
-    const range = `A1:${String.fromCharCode(64 + BOOK_COLS.length)}1`;
-    await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/range(address='${range}')`, {
-      method: 'PATCH', body: JSON.stringify({ values: [BOOK_COLS] }),
-    });
-    const t = await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(firstSheet)}/tables/add`, {
-      method: 'POST', body: JSON.stringify({ address: `${firstSheet}!${range}`, hasHeaders: true }),
-    });
-    await gfetch(`${wbBase()}/tables/${t.id}`, {
-      method: 'PATCH', body: JSON.stringify({ name: CONFIG.bookingsTable }),
-    });
-  }
-  if (!(await tableExists(CONFIG.overridesTable))) {
-    if (!(await worksheetExists(CONFIG.overridesSheet))) {
-      await gfetch(`${wbBase()}/worksheets/add`, { method: 'POST', body: JSON.stringify({ name: CONFIG.overridesSheet }) });
-    }
-    const range = `A1:${String.fromCharCode(64 + OVR_COLS.length)}1`;
-    await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(CONFIG.overridesSheet)}/range(address='${range}')`, {
-      method: 'PATCH', body: JSON.stringify({ values: [OVR_COLS] }),
-    });
-    const t = await gfetch(`${wbBase()}/worksheets/${encodeURIComponent(CONFIG.overridesSheet)}/tables/add`, {
-      method: 'POST', body: JSON.stringify({ address: `${CONFIG.overridesSheet}!${range}`, hasHeaders: true }),
-    });
-    await gfetch(`${wbBase()}/tables/${t.id}`, {
-      method: 'PATCH', body: JSON.stringify({ name: CONFIG.overridesTable }),
-    });
-  }
-}
-
-async function fetchTableRows(tableName) {
-  let rows = [];
-  let url = `${wbBase()}/tables/${encodeURIComponent(tableName)}/rows?$top=2000`;
-  while (url) {
-    const resp = await gfetch(url);
-    rows = rows.concat(resp.value || []);
-    url = resp['@odata.nextLink'] || null;
-  }
-  return rows;
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const result = await res.json();
+  if (result && result.error) throw new Error(result.error);
+  return result;
 }
 
 async function loadAll() {
-  setSyncUI('busy', '正在从 Excel 拉取数据…');
-  const [bk, ov] = await Promise.all([
-    fetchTableRows(CONFIG.bookingsTable),
-    fetchTableRows(CONFIG.overridesTable),
-  ]);
-  bookRowsCache = bk.map(r => ({
-    rowIndex: r.index, id: r.values[0][0], date: r.values[0][1], name: r.values[0][2],
-    time: r.values[0][3], contact: r.values[0][4], source: r.values[0][5], notes: r.values[0][6], ts: r.values[0][7],
-  }));
-  ovrRowsCache = ov.map(r => ({ rowIndex: r.index, date: r.values[0][0], name: r.values[0][1] }));
-
+  setSyncUI('busy', '正在加载数据…');
+  const data = await api('list');
   BK = {};
-  for (const r of bookRowsCache) {
-    if (!r.date) continue;
-    if (!BK[r.date]) BK[r.date] = [];
-    BK[r.date].push({ _id: r.id, name: r.name, time: r.time, contact: r.contact, source: r.source, notes: r.notes, ts: r.ts });
+  for (const b of (data.bookings || [])) {
+    if (!b.date) continue;
+    if (!BK[b.date]) BK[b.date] = [];
+    BK[b.date].push({ _id: b.id, name: b.name, time: b.time, contact: b.contact, source: b.source, notes: b.notes, ts: b.ts });
   }
-  OV = {};
-  for (const r of ovrRowsCache) { if (r.date) OV[r.date] = r.name; }
-
+  OV = data.overrides || {};
   const now = new Date();
   setSyncUI('ok', `已同步 · ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`);
 }
 
-async function addBookingRow(b) {
-  setSyncUI('busy', '正在保存预约…');
-  const row = [[b._id, b.date, b.name, b.time, b.contact, b.source, b.notes, b.ts]];
-  const resp = await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/add`, {
-    method: 'POST', body: JSON.stringify({ values: row }),
-  });
-  bookRowsCache.push({ rowIndex: resp.index, ...b });
-  setSyncUI('ok', '已保存');
-}
-async function deleteBookingRow(bookingId) {
-  setSyncUI('busy', '正在删除…');
-  const rows = await fetchTableRows(CONFIG.bookingsTable);
-  const target = rows.find(r => r.values[0][0] === bookingId);
-  if (!target) throw new Error('未找到对应行，请刷新');
-  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, { method: 'DELETE' });
-  setSyncUI('ok', '已删除');
-}
-async function updateBookingNotes(bookingId, newNotes) {
-  setSyncUI('busy', '正在保存…');
-  const rows = await fetchTableRows(CONFIG.bookingsTable);
-  const target = rows.find(r => r.values[0][0] === bookingId);
-  if (!target) throw new Error('未找到对应行，请刷新');
-  const newValues = [...target.values[0]]; newValues[6] = newNotes;
-  await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.bookingsTable)}/rows/itemAt(index=${target.index})`, {
-    method: 'PATCH', body: JSON.stringify({ values: [newValues] }),
-  });
-  setSyncUI('ok', '已保存');
-}
-async function setOverride(dateStr, memberName) {
-  setSyncUI('busy', '正在保存负责人…');
-  const rows = await fetchTableRows(CONFIG.overridesTable);
-  const existing = rows.find(r => r.values[0][0] === dateStr);
-  if (existing) {
-    await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.overridesTable)}/rows/itemAt(index=${existing.index})`, {
-      method: 'PATCH', body: JSON.stringify({ values: [[dateStr, memberName]] }),
-    });
-  } else {
-    await gfetch(`${wbBase()}/tables/${encodeURIComponent(CONFIG.overridesTable)}/rows/add`, {
-      method: 'POST', body: JSON.stringify({ values: [[dateStr, memberName]] }),
-    });
-  }
-  setSyncUI('ok', '已保存');
-}
-
+// ════════════════════════════════════════════════════════════════════════════
+// 启动
+// ════════════════════════════════════════════════════════════════════════════
 async function bootstrap() {
   try {
-    setBoot('正在解析文件位置…', '通过分享链接查找 Excel…');
-    await resolveLocation();
-  } catch (e) { bootErr('无法访问 Excel 文件', e); return; }
-
-  try {
-    setBoot('检查 Excel 表结构…', '');
-    const [hasB, hasO] = await Promise.all([
-      tableExists(CONFIG.bookingsTable),
-      tableExists(CONFIG.overridesTable),
-    ]);
-    if (!hasB || !hasO) {
-      setBoot('Excel 尚未初始化', `检测到文件已存在但缺少表结构。点击下方按钮自动创建 <b>${CONFIG.bookingsTable}</b> 和 <b>${CONFIG.overridesTable}</b> 两张表。<br><br>(只需执行一次)`, {
-        spinner: false,
-        actions: '<button class="init-btn" onclick="runInit()">⚙️ 初始化表结构</button>',
-      });
-      return;
-    }
-  } catch (e) { bootErr('检查表结构失败', e); return; }
-
-  try {
-    setBoot('正在加载排班数据…', '');
+    setBoot('正在加载共享数据…', '从 Google Sheets 拉取最新预约');
     await loadAll();
-  } catch (e) { bootErr('加载数据失败', e); return; }
-
-  showApp();
-  renderLegend();
-  buildCal();
-}
-
-async function runInit() {
-  try {
-    setBoot('正在初始化…', '正在创建 Bookings 和 Overrides 表…');
-    await initWorkbook();
-    await bootstrap();
-  } catch (e) { bootErr('初始化失败', e); }
+    showApp();
+    renderLegend();
+    buildCal();
+  } catch (e) { bootErr('加载数据失败', e); }
 }
 
 async function manualRefresh() {
@@ -635,23 +371,34 @@ function openModal(y,m,d){
 }
 function escapeHtml(s) { return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toggleED(){ editDuty=!editDuty; renderM(); }
+
 async function doSetDuty(n) {
-  try { OV[selD]=n; editDuty=false; renderM(); buildCal(); await setOverride(selD,n); }
-  catch (e) { setSyncUI('err','保存失败: '+e.message); alert('保存失败: '+e.message); }
+  try {
+    OV[selD] = n; editDuty = false; renderM(); buildCal();
+    await api('setOverride', { date: selD, name: n });
+    setSyncUI('ok','已保存');
+  } catch (e) { setSyncUI('err','保存失败: '+e.message); alert('保存失败: '+e.message); }
 }
+
 function editNote(i){ document.getElementById(`noteView_${i}`).style.display='none'; document.getElementById(`noteEdit_${i}`).style.display='block'; document.getElementById(`noteTA_${i}`).focus(); }
 function cancelNote(i){ document.getElementById(`noteView_${i}`).style.display='block'; document.getElementById(`noteEdit_${i}`).style.display='none'; }
+
 async function doSaveNote(i) {
   const b = BK[selD][i];
   const newNotes = document.getElementById(`noteTA_${i}`).value.trim();
-  try { await updateBookingNotes(b._id, newNotes); b.notes=newNotes; renderM(); buildCal(); }
-  catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
+  try {
+    setSyncUI('busy','正在保存…');
+    await api('updateNotes', { id: b._id, notes: newNotes });
+    b.notes = newNotes; renderM(); buildCal();
+    setSyncUI('ok','已保存');
+  } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
 }
+
 async function doAddBk() {
   const nm = document.getElementById('fN').value.trim();
   if (!nm) { alert('请填写客户姓名'); return; }
   const b = {
-    _id: crypto.randomUUID(), date: selD, name: nm,
+    id: crypto.randomUUID(), date: selD, name: nm,
     time: document.getElementById('fT').value.trim(),
     contact: document.getElementById('fC').value.trim(),
     source: document.getElementById('fS').value.trim(),
@@ -659,18 +406,27 @@ async function doAddBk() {
     ts: new Date().toISOString(),
   };
   try {
-    await addBookingRow(b);
+    setSyncUI('busy','正在保存预约…');
+    await api('addBooking', { booking: b });
     if (!BK[selD]) BK[selD] = [];
-    BK[selD].push(b);
+    BK[selD].push({ _id: b.id, name: b.name, time: b.time, contact: b.contact, source: b.source, notes: b.notes, ts: b.ts });
     renderM(); buildCal();
+    setSyncUI('ok','已保存');
   } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
 }
+
 async function doDelBk(i) {
   if (!confirm('确认删除这条预约？')) return;
   const b = BK[selD][i];
-  try { await deleteBookingRow(b._id); BK[selD].splice(i,1); renderM(); buildCal(); }
-  catch (e) { setSyncUI('err','删除失败'); alert('删除失败: '+e.message); }
+  try {
+    setSyncUI('busy','正在删除…');
+    await api('deleteBooking', { id: b._id });
+    BK[selD].splice(i,1);
+    renderM(); buildCal();
+    setSyncUI('ok','已删除');
+  } catch (e) { setSyncUI('err','删除失败'); alert('删除失败: '+e.message); }
 }
+
 function renderM(){
   const mem = getMem(selD);
   const bks = BK[selD] || [];
@@ -708,7 +464,7 @@ function renderSummary(){
 }
 document.addEventListener('keydown', e => { if (e.key==='Escape') { closeModal(); closeSummary(); } });
 
-initAuth();
+bootstrap();
 </script>
 </body>
 </html>
