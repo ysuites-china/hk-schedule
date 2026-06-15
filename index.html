@@ -133,7 +133,7 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-card">
-    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v5 · Google Sheets 后端（免登录）</div>
+    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v6 · 时间排序 + 周末负责人显示</div>
     <div class="loading-spinner" id="bootSpinner" style="margin: 0 auto 14px"></div>
     <h2 id="bootTitle">正在加载共享数据…</h2>
     <p id="bootMsg">从 Google Sheets 拉取最新预约</p>
@@ -209,7 +209,7 @@ const MEMBERS = [
   {name:'Sitara',   color:'#e63946', start:'2026-05-25', end:'2026-05-29'},
   {name:'Xihao',    color:'#457b9d', start:'2026-05-30', end:'2026-06-05'},
   {name:'Fonia',    color:'#2a9d8f', start:'2026-06-05', end:'2026-06-12'},
-  {name:'Benneth',  color:'#e9a824', start:'2026-06-12', end:'2026-06-19'},
+  {name:'Bennett',  color:'#e9a824', start:'2026-06-12', end:'2026-06-19'},
   {name:'Miaomiao', color:'#f4742a', start:'2026-06-19', end:'2026-06-26'},
   {name:'Cassie',   color:'#9b5de5', start:'2026-06-26', end:'2026-07-03'},
   {name:'Eric',     color:'#0aab82', start:'2026-07-03', end:'2026-07-10'},
@@ -286,6 +286,7 @@ async function loadAll() {
     BK[b.date].push({ _id: b.id, name: b.name, time: b.time, contact: b.contact, source: b.source, notes: b.notes, ts: b.ts });
   }
   OV = data.overrides || {};
+  sortAllDays();
   const now = new Date();
   setSyncUI('ok', `已同步 · ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`);
 }
@@ -316,6 +317,31 @@ function renderLegend() {
 }
 
 function dkey(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+// 把时间字符串解析为可比较的分钟数 (HH:MM / H:MM / 上午下午 / 空 等都尽量支持)
+function timeToMin(t) {
+  if (!t) return 99999;
+  const s = String(t).trim();
+  const m = s.match(/(\d{1,2})\s*[:：]\s*(\d{1,2})/);
+  if (m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  const pm = /下午|晚上|傍晚|夜里|PM/i.test(s);
+  const am = /上午|早上|凌晨|早晨|AM/i.test(s);
+  const hm = s.match(/(\d{1,2})/);
+  if (hm) {
+    let h = parseInt(hm[1],10);
+    if (pm && h < 12) h += 12;
+    if (am && h === 12) h = 0;
+    return h*60;
+  }
+  return 99999;
+}
+
+function sortDay(arr) {
+  if (Array.isArray(arr)) arr.sort((a,b) => timeToMin(a.time) - timeToMin(b.time));
+}
+function sortAllDays() {
+  for (const k of Object.keys(BK)) sortDay(BK[k]);
+}
 function getMem(ds){
   if (OV[ds]) { const c=[...MEMBERS].reverse().find(x=>x.name===OV[ds]); return {name:OV[ds], color:c?c.color:'#888'}; }
   const dt=ld(ds);
@@ -345,8 +371,13 @@ function buildCal(){
     el.className = ['day-cell', isWE?'we':'', isT?'today':'', !inR?'oor':''].filter(Boolean).join(' ');
     let h = `<div class="day-num">${cM+1}/${d}</div>`;
     if (inR) {
-      if (isWE) h += `<div class="we-note">自行调整</div>`;
-      if (mem && !isWE) h += `<div class="mem-tag" style="background:${mem.color}">${mem.name}</div>`;
+      if (mem) {
+        // 有负责人就显示（工作日默认 / 周末手动指定 / 调班覆写 都走这里）
+        h += `<div class="mem-tag" style="background:${mem.color}">${mem.name}</div>`;
+      } else if (isWE) {
+        // 周末未指定
+        h += `<div class="we-note">自行调整</div>`;
+      }
     } else h += `<div style="font-size:10px;color:#ccc">排班外</div>`;
     bks.slice(0,2).forEach(b => {
       const t = b.time ? `<span class="bk-chip-time">${b.time}</span>` : '';
@@ -410,6 +441,7 @@ async function doAddBk() {
     await api('addBooking', { booking: b });
     if (!BK[selD]) BK[selD] = [];
     BK[selD].push({ _id: b.id, name: b.name, time: b.time, contact: b.contact, source: b.source, notes: b.notes, ts: b.ts });
+    sortDay(BK[selD]);
     renderM(); buildCal();
     setSyncUI('ok','已保存');
   } catch (e) { setSyncUI('err','保存失败'); alert('保存失败: '+e.message); }
