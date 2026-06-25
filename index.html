@@ -133,7 +133,7 @@ textarea.f-in { resize: vertical; min-height: 60px; }
 
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-card">
-    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v6 · 时间排序 + 周末负责人显示</div>
+    <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:8px">✓ v7 · 默认显示当月</div>
     <div class="loading-spinner" id="bootSpinner" style="margin: 0 auto 14px"></div>
     <h2 id="bootTitle">正在加载共享数据…</h2>
     <p id="bootMsg">从 Google Sheets 拉取最新预约</p>
@@ -219,7 +219,9 @@ const MEMBERS = [
 ];
 
 let OV = {}, BK = {};
-let cY = 2026, cM = 4, selD = null, editDuty = false;
+// 默认显示"今天"所在月份
+const _now = new Date();
+let cY = _now.getFullYear(), cM = _now.getMonth(), selD = null, editDuty = false;
 
 function ld(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
 const RANGE_S = ld('2026-05-25'), RANGE_E = ld('2026-07-31');
